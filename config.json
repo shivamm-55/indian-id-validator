@@ -1,0 +1,104 @@
+{
+  "//": "Configuration file for indian-id-validator models, mapping document types to detection models and class names",
+  "models": {
+    "id_classifier": {
+      "type": "classification",
+      "path": "models/id_classifier.pt",
+      "classes": {
+        "0": "aadhar_back",
+        "1": "aadhar_front",
+        "2": "driving_license_back",
+        "3": "driving_license_front",
+        "4": "pan_card_front",
+        "5": "passport",
+        "6": "voter_id"
+      }
+    },
+    "aadhaar": {
+      "type": "detection",
+      "path": "models/aadhaar.pt",
+      "classes": [
+        "Aadhaar_Number",
+        "Aadhaar_DOB",
+        "Aadhaar_Gender",
+        "Aadhaar_Name",
+        "Aadhaar_Address"
+      ]
+    },
+    "pan_card": {
+      "type": "detection",
+      "path": "models/pan_card.pt",
+      "classes": [
+        "PAN",
+        "Name",
+        "Father's Name",
+        "DOB",
+        "Pan Card"
+      ]
+    },
+    "passport": {
+      "type": "detection",
+      "path": "models/passport.pt",
+      "classes": [
+        "Address",
+        "Code",
+        "DOB",
+        "DOI",
+        "EXP",
+        "Gender",
+        "MRZ1",
+        "MRZ2",
+        "Name",
+        "Nationality",
+        "Nation",
+        "POI"
+      ]
+    },
+    "voter_id": {
+      "type": "detection",
+      "path": "models/voter_id.pt",
+      "classes": [
+        "Address",
+        "Age",
+        "DOB",
+        "Card Voter ID 1 Back",
+        "Card Voter ID 2 Front",
+        "Card Voter ID 2 Back",
+        "Card Voter ID 1 Front",
+        "Date of Issue",
+        "Election",
+        "Father",
+        "Gender",
+        "Name",
+        "Point",
+        "Portrait",
+        "Symbol",
+        "Voter ID"
+      ]
+    },
+    "driving_license": {
+      "type": "detection",
+      "path": "models/driving_license.pt",
+      "classes": [
+        "Address",
+        "Blood Group",
+        "DL No",
+        "DOB",
+        "Name",
+        "Relation With",
+        "RTO",
+        "State",
+        "Vehicle Type"
+      ]
+    }
+  },
+  "doc_type_to_model": {
+    "aadhar_front": "aadhaar",
+    "aadhar_back": "aadhaar",
+    "pan_card_front": "pan_card",
+    "passport": "passport",
+    "voter_id": "voter_id",
+    "driving_license_front": "driving_license",
+    "driving_license_back": "driving_license"
+  }
+}
