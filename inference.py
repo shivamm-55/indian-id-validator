@@ -88,8 +88,6 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
         model_name = CONFIG["doc_type_to_model"].get(doc_type, None)
         if model_name is None:
             raise ValueError(f"No detection model mapped for document type: {doc_type}")
-    else:
-        model_name = model_name.capitalize()
 
     # Load detection model
     if model_name not in CONFIG["models"]:
