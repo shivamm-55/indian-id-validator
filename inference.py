@@ -1,177 +1,225 @@
-import json
-import argparse
-import os
 import cv2
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
-from pathlib import Path
+from huggingface_hub import hf_hub_download
+import os
 
+# Load configuration
 def load_config(config_path="config.json"):
-    """Load configuration from JSON file."""
     if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Config file {config_path} not found.")
-    with open(config_path, 'r') as f:
+        config_path = hf_hub_download(repo_id="logasanjeev/indian-id-validator", filename="config.json")
+    with open(config_path, "r") as f:
         return json.load(f)
 
-def preprocess_image(image):
-    """Apply preprocessing steps to enhance OCR accuracy."""
-    scale_factor = 2
-    image = cv2.resize(image, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_CUBIC)
-    
-    image = cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
-    
+CONFIG = load_config()
+
+# Initialize PaddleOCR
+OCR = PaddleOCR(use_angle_cls=True, lang="en")
+
+# Preprocessing functions
+def upscale_image(image, scale=2):
+    """Upscales the image to improve OCR accuracy."""
+    return cv2.resize(image, (image.shape[1] * scale, image.shape[0] * scale), interpolation=cv2.INTER_CUBIC)
+
+def unblur_image(image):
+    """Sharpens the image to reduce blurriness."""
     kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-    image = cv2.filter2D(image, -1, kernel)
-    
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    image = clahe.apply(gray)
-    
-    image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    return cv2.filter2D(image, -1, kernel)
+
+def denoise_image(image):
+    """Removes noise using Non-Local Means Denoising."""
+    return cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+
+def enhance_contrast(image):
+    """Enhances contrast using CLAHE."""
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+    l = clahe.apply(l)
+    return cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
+
+def preprocess_image(image):
+    """Applies all preprocessing steps."""
+    if isinstance(image, str):
+        image = cv2.imread(image)
+    if image is None or not isinstance(image, np.ndarray):
+        raise ValueError("Invalid image input. Provide a valid file path or numpy array.")
+    image = upscale_image(image, scale=2)
+    image = unblur_image(image)
+    image = denoise_image(image)
+    image = enhance_contrast(image)
     return image
 
-def run_ocr(cropped_image, ocr):
-    """Run PaddleOCR on a cropped image and return extracted text with confidence."""
-    result = ocr.ocr(cropped_image, cls=True)
-    if not result or not result[0]:
-        return None, 0.0
-    text = result[0][0][1][0]
-    confidence = result[0][0][1][1]
-    return text, confidence
-
-def visualize_yolo_output(image, boxes, class_names, save_path=None, show=False):
-    """Visualize YOLO bounding boxes on the image."""
-    img = image.copy()
-    for box in boxes:
-        x1, y1, x2, y2 = box.xyxy[0].numpy().astype(int)
-        label = class_names[int(box.cls)]
-        conf = box.conf[0].numpy()
-        cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(img, f"{label}: {conf:.2f}", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-    if save_path:
-        cv2.imwrite(save_path, img)
-    if show:
-        plt.imshow(img[:, :, ::-1])
-        plt.axis('off')
-        plt.show()
-    return img
-
-def visualize_ocr_output(cropped_image, ocr_result, text, confidence, save_path=None, show=False):
-    """Visualize OCR bounding boxes and text on the cropped image."""
-    img = cropped_image.copy()
-    if ocr_result and ocr_result[0]:
-        for line in ocr_result[0]:
-            box = line[0]
-            x1, y1 = int(box[0][0]), int(box[0][1])
-            x2, y2 = int(box[2][0]), int(box[2][1])
-            cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 2)
-            cv2.putText(img, f"{text} ({confidence:.2f})", (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-    if save_path:
-        cv2.imwrite(save_path, img)
-    if show:
-        plt.imshow(img[:, :, ::-1])
-        plt.axis('off')
-        plt.show()
-    return img
-
-def process_image(image_path, config, model_choice=None, show_yolo=False, show_ocr=False, save_json=True, verbose=False):
-    """Process an input image to classify document type, detect fields, and extract text."""
-    if not os.path.exists(image_path):
-        raise FileNotFoundError(f"Image {image_path} not found.")
+# Core inference function
+def process_id(image_path, model_name=None, save_json=True, output_json="detected_text.json", verbose=False):
+    """
+    Process an ID image to classify document type, detect fields, and extract text.
     
+    Args:
+        image_path (str): Path to the input image.
+        model_name (str, optional): Specific model to use (e.g., 'Aadhaar', 'Pan_Card'). If None, uses Id_Classifier.
+        save_json (bool): Save extracted text to JSON file.
+        output_json (str): Path to save JSON output.
+        verbose (bool): Display visualizations (bounding boxes, cropped images).
+    
+    Returns:
+        dict: Extracted text for each detected field.
+    """
+    # Load image
     image = cv2.imread(image_path)
     if image is None:
-        raise ValueError(f"Failed to load image {image_path}.")
-    
-    ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
-    
-    doc_type = model_choice
-    if model_choice is None:
-        classifier = YOLO(config["models"]["id_classifier"]["path"])
-        results = classifier(image, verbose=verbose)
-        top_class_idx = results[0].probs.top1
-        doc_type = config["models"]["id_classifier"]["classes"][str(top_class_idx)]
-        if verbose:
-            print(f"Classified document as: {doc_type} (confidence: {results[0].probs.top1conf:.2f})")
-    
-    if doc_type not in config["doc_type_to_model"]:
-        raise ValueError(f"Document type {doc_type} not supported.")
-    model_name = config["doc_type_to_model"][doc_type]
-    if model_name not in config["models"]:
-        raise ValueError(f"Model {model_name} not found in config.")
-    
-    detector = YOLO(config["models"][model_name]["path"])
-    class_names = config["models"][model_name]["classes"]
-    results = detector(image, verbose=verbose)
-    
-    output = {}
-    
-    for i, box in enumerate(results[0].boxes):
-        x1, y1, x2, y2 = box.xyxy[0].numpy().astype(int)
-        label = class_names[int(box.cls)]
-        conf = box.conf[0].numpy()
-        
-        cropped = image[y1:y2, x1:x2]
-        if cropped.size == 0:
-            continue
-        
-        preprocessed = preprocess_image(cropped)
-        
-        text, ocr_conf = run_ocr(preprocessed, ocr)
-        if text:
-            output[label] = {"text": text, "yolo_conf": float(conf), "ocr_conf": float(ocr_conf)}
-            if verbose:
-                print(f"Field: {label}, Text: {text}, YOLO Conf: {conf:.2f}, OCR Conf: {ocr_conf:.2f}")
-        
-        if show_ocr or (save_json and show_ocr):
-            ocr_result = ocr.ocr(preprocessed, cls=True)
-            save_path = f"ocr_output_{label}_{i}.jpg" if save_json else None
-            visualize_ocr_output(preprocessed, ocr_result, text, ocr_conf, save_path=save_path, show=show_ocr)
-    
-    if show_yolo or (save_json and show_yolo):
-        save_path = "yolo_output.jpg" if save_json else None
-        visualize_yolo_output(image, results[0].boxes, class_names, save_path=save_path, show=show_yolo)
-    
+        raise ValueError(f"Failed to load image: {image_path}")
+
+    # Download and load model
+    def load_model(model_key):
+        model_path = CONFIG["models"][model_key]["path"]
+        if not os.path.exists(model_path):
+            model_path = hf_hub_download(repo_id="logasanjeev/indian-id-validator", filename=model_path)
+        return YOLO(model_path)
+
+    # Classify document type if model_name is not specified
+    if model_name is None:
+        classifier = load_model("Id_Classifier")
+        results = classifier(image)
+        doc_type = results[0].names[results[0].probs.top1]
+        model_name = CONFIG["doc_type_to_model"].get(doc_type, None)
+        if model_name is None:
+            raise ValueError(f"No detection model mapped for document type: {doc_type}")
+    else:
+        model_name = model_name.capitalize()
+
+    # Load detection model
+    if model_name not in CONFIG["models"]:
+        raise ValueError(f"Invalid model name: {model_name}")
+    model = load_model(model_name)
+    class_names = CONFIG["models"][model_name]["classes"]
+
+    # Run inference
+    results = model(image_path)
+    filtered_boxes = {}
+    output_image = results[0].orig_img.copy()
+    original_image = cv2.imread(image_path)
+    h, w, _ = output_image.shape
+
+    # Filter highest confidence box for each class
+    for result in results:
+        for box in result.boxes:
+            cls = int(box.cls[0].item())
+            conf = box.conf[0].item()
+            xyxy = box.xyxy[0].tolist()
+            if cls not in filtered_boxes or conf > filtered_boxes[cls]["conf"]:
+                filtered_boxes[cls] = {"conf": conf, "xyxy": xyxy, "class_name": class_names[cls]}
+
+    # Extract text and visualize
+    detected_text = {}
+    processed_images = []
+    for cls, data in filtered_boxes.items():
+        x_min, y_min, x_max, y_max = map(int, data["xyxy"])
+        class_name = data["class_name"]
+        x_min, y_min = max(0, x_min), max(0, y_min)
+        x_max, y_max = min(w, x_max), min(h, y_max)
+
+        # Crop region
+        region_img = original_image[y_min:y_max, x_min:x_max]
+        region_img = preprocess_image(region_img)
+        region_h, region_w = region_img.shape[:2]
+
+        # Create black canvas and center the cropped region
+        black_canvas = np.ones((h, w, 3), dtype=np.uint8)
+        center_x, center_y = w // 2, h // 2
+        top_left_x = max(0, min(w - region_w, center_x - region_w // 2))
+        top_left_y = max(0, min(h - region_h, center_y - region_h // 2))
+        region_w = min(region_w, w - top_left_x)
+        region_h = min(region_h, h - top_left_y)
+        region_img = cv2.resize(region_img, (region_w, region_h))
+        black_canvas[top_left_y:top_left_y+region_h, top_left_x:top_left_x+region_w] = region_img
+
+        # Perform OCR
+        ocr_result = OCR.ocr(black_canvas, cls=True) or []
+        extracted_text = " ".join(word_info[1][0] for line in ocr_result for word_info in line if word_info)
+        detected_text[class_name] = extracted_text
+
+        # Draw OCR bounding boxes
+        for line in ocr_result:
+            for word_info in line:
+                if word_info:
+                    box = word_info[0]
+                    x1, y1 = int(box[0][0]), int(box[0][1])
+                    x2, y2 = int(box[2][0]), int(box[2][1])
+                    cv2.rectangle(black_canvas, (x1, y1), (x2, y2), (0, 255, 0), 5)
+
+        # Save processed image
+        processed_images.append((class_name, black_canvas, extracted_text))
+
+        # Draw original bounding box
+        cv2.rectangle(output_image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+        cv2.putText(output_image, class_name, (x_min, y_min - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
+    # Save JSON
     if save_json:
-        output_path = "detected_text.json"
-        with open(output_path, 'w') as f:
-            json.dump(output, f, indent=2)
-        if verbose:
-            print(f"Saved results to {output_path}")
-    
-    return output
+        with open(output_json, "w") as f:
+            json.dump(detected_text, f, indent=4)
 
-def main():
-    """Command-line interface for inference."""
-    parser = argparse.ArgumentParser(description="Indian ID Validator Inference Script")
-    parser.add_argument("--image", required=True, help="Path to input image")
-    parser.add_argument("--model", default=None, choices=["aadhaar", "pan_card", "passport", "voter_id", "driving_license"],
-                        help="Specify detection model (default: auto via id_classifier)")
-    parser.add_argument("--show-yolo", action="store_true", help="Display/save YOLO bounding box image")
-    parser.add_argument("--show-ocr", action="store_true", help="Display/save OCR results for each field")
-    parser.add_argument("--no-save-json", action="store_true", help="Disable saving detected_text.json")
-    parser.add_argument("--verbose", action="store_true", help="Print detailed inference results")
-    args = parser.parse_args()
-    
-    config = load_config()
-    try:
-        output = process_image(
-            image_path=args.image,
-            config=config,
-            model_choice=args.model,
-            show_yolo=args.show_yolo,
-            show_ocr=args.show_ocr,
-            save_json=not args.no_save_json,
-            verbose=args.verbose
-        )
-        if not args.verbose:
-            print("Detected Fields:")
-            for label, data in output.items():
-                print(f"{label}: {data['text']} (YOLO Conf: {data['yolo_conf']:.2f}, OCR Conf: {data['ocr_conf']:.2f})")
-    except Exception as e:
-        print(f"Error: {str(e)}")
+    # Visualize
+    if verbose:
+        plt.figure(figsize=(10, 10))
+        plt.imshow(cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB))
+        plt.axis("off")
+        plt.title("Raw Image")
+        plt.show()
 
+        plt.figure(figsize=(10, 10))
+        plt.imshow(cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB))
+        plt.axis("off")
+        plt.title("Output Image with Bounding Boxes")
+        plt.show()
+
+        for class_name, cropped_image, text in processed_images:
+            plt.figure(figsize=(10, 10))
+            plt.imshow(cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB))
+            plt.axis("off")
+            plt.title(f"{class_name} - Extracted: {text}")
+            plt.show()
+
+    return detected_text
+
+# Model-specific functions
+def aadhaar(image_path, save_json=True, output_json="detected_text.json", verbose=False):
+    """Process an Aadhaar card image."""
+    return process_id(image_path, model_name="Aadhaar", save_json=save_json, output_json=output_json, verbose=verbose)
+
+def pan_card(image_path, save_json=True, output_json="detected_text.json", verbose=False):
+    """Process a PAN card image."""
+    return process_id(image_path, model_name="Pan_Card", save_json=save_json, output_json=output_json, verbose=verbose)
+
+def passport(image_path, save_json=True, output_json="detected_text.json", verbose=False):
+    """Process a passport image."""
+    return process_id(image_path, model_name="Passport", save_json=save_json, output_json=output_json, verbose=verbose)
+
+def voter_id(image_path, save_json=True, output_json="detected_text.json", verbose=False):
+    """Process a voter ID image."""
+    return process_id(image_path, model_name="Voter_Id", save_json=save_json, output_json=output_json, verbose=verbose)
+
+def driving_license(image_path, save_json=True, output_json="detected_text.json", verbose=False):
+    """Process a driving license image."""
+    return process_id(image_path, model_name="Driving_License", save_json=save_json, output_json=output_json, verbose=verbose)
+
+# Command-line interface
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(description="Indian ID Validator: Classify and extract fields from ID images.")
+    parser.add_argument("image_path", help="Path to the input ID image")
+    parser.add_argument("--model", default=None, choices=["Aadhaar", "Pan_Card", "Passport", "Voter_Id", "Driving_License"],
+                        help="Specific model to use (default: auto-detect with Id_Classifier)")
+    parser.add_argument("--no-save-json", action="store_false", dest="save_json", help="Disable saving to JSON")
+    parser.add_argument("--output-json", default="detected_text.json", help="Path to save JSON output")
+    parser.add_argument("--verbose", action="store_true", help="Display visualizations")
+    args = parser.parse_args()
+
+    result = process_id(args.image_path, args.model, args.save_json, args.output_json, args.verbose)
+    print("Extracted Text:")
+    print(json.dumps(result, indent=4))
