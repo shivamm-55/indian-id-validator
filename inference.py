@@ -6,6 +6,11 @@ from ultralytics import YOLO
 from paddleocr import PaddleOCR
 from huggingface_hub import hf_hub_download
 import os
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load configuration
 def load_config(config_path="config.json"):
@@ -86,6 +91,7 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
         results = classifier(image)
         doc_type = results[0].names[results[0].probs.top1]
         model_name = CONFIG["doc_type_to_model"].get(doc_type, None)
+        logger.info(f"Detected document type: {doc_type}, mapped to model: {model_name}")
         if model_name is None:
             raise ValueError(f"No detection model mapped for document type: {doc_type}")
 
@@ -94,6 +100,7 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
         raise ValueError(f"Invalid model name: {model_name}")
     model = load_model(model_name)
     class_names = CONFIG["models"][model_name]["classes"]
+    logger.info(f"Loaded model: {model_name} with classes: {class_names}")
 
     # Run inference
     results = model(image_path)
@@ -104,58 +111,87 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
 
     # Filter highest confidence box for each class
     for result in results:
+        if not result.boxes:
+            logger.warning("No boxes detected in the image.")
+            continue
         for box in result.boxes:
-            cls = int(box.cls[0].item())
-            conf = box.conf[0].item()
-            xyxy = box.xyxy[0].tolist()
-            if cls not in filtered_boxes or conf > filtered_boxes[cls]["conf"]:
-                filtered_boxes[cls] = {"conf": conf, "xyxy": xyxy, "class_name": class_names[cls]}
+            try:
+                cls = int(box.cls[0].item())
+                conf = box.conf[0].item()
+                xyxy = box.xyxy[0].tolist()
+                if cls not in filtered_boxes or conf > filtered_boxes[cls]["conf"]:
+                    filtered_boxes[cls] = {"conf": conf, "xyxy": xyxy, "class_name": class_names[cls]}
+            except IndexError as e:
+                logger.error(f"Error processing box: {e}")
+                continue
 
     # Extract text and visualize
     detected_text = {}
     processed_images = []
     for cls, data in filtered_boxes.items():
-        x_min, y_min, x_max, y_max = map(int, data["xyxy"])
-        class_name = data["class_name"]
-        x_min, y_min = max(0, x_min), max(0, y_min)
-        x_max, y_max = min(w, x_max), min(h, y_max)
+        try:
+            x_min, y_min, x_max, y_max = map(int, data["xyxy"])
+            class_name = data["class_name"]
+            x_min, y_min = max(0, x_min), max(0, y_min)
+            x_max, y_max = min(w, x_max), min(h, y_max)
+            logger.info(f"Processing class: {class_name} at coordinates: ({x_min}, {y_min}, {x_max}, {y_max})")
 
-        # Crop region
-        region_img = original_image[y_min:y_max, x_min:x_max]
-        region_img = preprocess_image(region_img)
-        region_h, region_w = region_img.shape[:2]
+            # Crop region
+            region_img = original_image[y_min:y_max, x_min:x_max]
+            if region_img.size == 0:
+                logger.warning(f"Empty region for class: {class_name}. Skipping.")
+                continue
+            region_img = preprocess_image(region_img)
+            region_h, region_w = region_img.shape[:2]
 
-        # Create black canvas and center the cropped region
-        black_canvas = np.ones((h, w, 3), dtype=np.uint8)
-        center_x, center_y = w // 2, h // 2
-        top_left_x = max(0, min(w - region_w, center_x - region_w // 2))
-        top_left_y = max(0, min(h - region_h, center_y - region_h // 2))
-        region_w = min(region_w, w - top_left_x)
-        region_h = min(region_h, h - top_left_y)
-        region_img = cv2.resize(region_img, (region_w, region_h))
-        black_canvas[top_left_y:top_left_y+region_h, top_left_x:top_left_x+region_w] = region_img
+            # Create black canvas and center the cropped region
+            black_canvas = np.ones((h, w, 3), dtype=np.uint8)
+            center_x, center_y = w // 2, h // 2
+            top_left_x = max(0, min(w - region_w, center_x - region_w // 2))
+            top_left_y = max(0, min(h - region_h, center_y - region_h // 2))
+            region_w = min(region_w, w - top_left_x)
+            region_h = min(region_h, h - top_left_y)
+            region_img = cv2.resize(region_img, (region_w, region_h))
+            black_canvas[top_left_y:top_left_y+region_h, top_left_x:top_left_x+region_w] = region_img
 
-        # Perform OCR
-        ocr_result = OCR.ocr(black_canvas, cls=True) or []
-        extracted_text = " ".join(word_info[1][0] for line in ocr_result for word_info in line if word_info)
-        detected_text[class_name] = extracted_text
+            # Perform OCR
+            ocr_result = OCR.ocr(black_canvas, cls=True) or []
+            extracted_text = ""
+            if ocr_result:
+                try:
+                    extracted_text = " ".join(word_info[1][0] for line in ocr_result for word_info in line if word_info and len(word_info) > 1 and len(word_info[1]) > 0)
+                except (IndexError, TypeError) as e:
+                    logger.error(f"Error processing OCR result for class {class_name}: {e}")
+                    extracted_text = "OCR failed"
+            else:
+                logger.warning(f"No OCR results for class: {class_name}")
+                extracted_text = "No text detected"
 
-        # Draw OCR bounding boxes
-        for line in ocr_result:
-            for word_info in line:
-                if word_info:
-                    box = word_info[0]
-                    x1, y1 = int(box[0][0]), int(box[0][1])
-                    x2, y2 = int(box[2][0]), int(box[2][1])
-                    cv2.rectangle(black_canvas, (x1, y1), (x2, y2), (0, 255, 0), 5)
+            detected_text[class_name] = extracted_text
 
-        # Save processed image
-        processed_images.append((class_name, black_canvas, extracted_text))
+            # Draw OCR bounding boxes
+            for line in ocr_result:
+                for word_info in line:
+                    if word_info and len(word_info) > 0:
+                        try:
+                            box = word_info[0]
+                            x1, y1 = int(box[0][0]), int(box[0][1])
+                            x2, y2 = int(box[2][0]), int(box[2][1])
+                            cv2.rectangle(black_canvas, (x1, y1), (x2, y2), (0, 255, 0), 5)
+                        except (IndexError, TypeError) as e:
+                            logger.error(f"Error drawing OCR box for class {class_name}: {e}")
+                            continue
 
-        # Draw original bounding box
-        cv2.rectangle(output_image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-        cv2.putText(output_image, class_name, (x_min, y_min - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+            # Save processed image
+            processed_images.append((class_name, black_canvas, extracted_text))
+
+            # Draw original bounding box
+            cv2.rectangle(output_image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+            cv2.putText(output_image, class_name, (x_min, y_min - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        except Exception as e:
+            logger.error(f"Error processing class {class_name}: {e}")
+            continue
 
     # Save JSON
     if save_json:
