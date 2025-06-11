@@ -46,8 +46,8 @@
                 "MRZ1",
                 "MRZ2",
                 "Name",
-                "Nation",
                 "Nationality",
+                "Nation",
                 "POI"
             ]
         },
