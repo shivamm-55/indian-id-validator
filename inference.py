@@ -46,22 +46,12 @@ def enhance_contrast(image):
     l = clahe.apply(l)
     return cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
 
-def preprocess_mrz(image):
-    """Special preprocessing for MRZ regions."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8,8))
-    gray = clahe.apply(gray)
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
-
-def preprocess_image(image, is_mrz=False):
-    """Applies preprocessing steps, with special handling for MRZ."""
+def preprocess_image(image):
+    """Applies all preprocessing steps."""
     if isinstance(image, str):
         image = cv2.imread(image)
     if image is None or not isinstance(image, np.ndarray):
         raise ValueError("Invalid image input. Provide a valid file path or numpy array.")
-    if is_mrz:
-        return preprocess_mrz(image)
     image = upscale_image(image, scale=2)
     image = unblur_image(image)
     image = denoise_image(image)
@@ -75,10 +65,10 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
     
     Args:
         image_path (str): Path to the input image.
-        model_name (str, optional): Specific model to use (e.g., 'Aadhaar', 'Pan_Card'). If None, uses Id_Classifier.
+        model_name (str, optional): Specific model to use. If None, uses Id_Classifier.
         save_json (bool): Save extracted text to JSON file.
         output_json (str): Path to save JSON output.
-        verbose (bool): Display visualizations (bounding boxes, cropped images).
+        verbose (bool): Display visualizations.
     
     Returns:
         dict: Extracted text for each detected field.
@@ -115,12 +105,11 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
     # Run inference
     results = model(image_path)
     filtered_boxes = {}
-    class_counts = {}  # Track multiple instances of the same class
     output_image = results[0].orig_img.copy()
     original_image = cv2.imread(image_path)
     h, w, _ = output_image.shape
 
-    # Filter boxes, allowing multiple instances of the same class
+    # Filter highest confidence box for each class
     for result in results:
         if not result.boxes:
             logger.warning("No boxes detected in the image.")
@@ -128,13 +117,14 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
         for box in result.boxes:
             try:
                 cls = int(box.cls[0].item())
+                if cls >= len(class_names):
+                    logger.warning(f"Invalid class index {cls} for model {model_name}. Skipping box.")
+                    continue
                 conf = box.conf[0].item()
                 xyxy = box.xyxy[0].tolist()
-                class_name = class_names[cls]
-                class_counts[class_name] = class_counts.get(class_name, 0) + 1
-                unique_class_name = f"{class_name}_{class_counts[class_name]}" if class_counts[class_name] > 1 else class_name
-                filtered_boxes[unique_class_name] = {"conf": conf, "xyxy": xyxy, "class_name": unique_class_name}
-                logger.info(f"Detected box for class: {unique_class_name}, confidence: {conf:.2f}")
+                if cls not in filtered_boxes or conf > filtered_boxes[cls]["conf"]:
+                    filtered_boxes[cls] = {"conf": conf, "xyxy": xyxy, "class_name": class_names[cls]}
+                    logger.info(f"Detected box for class: {class_names[cls]}, confidence: {conf:.2f}")
             except IndexError as e:
                 logger.error(f"Error processing box: {e}, box data: {box}")
                 continue
@@ -142,7 +132,7 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
     # Extract text and visualize
     detected_text = {}
     processed_images = []
-    for unique_class_name, data in filtered_boxes.items():
+    for cls, data in filtered_boxes.items():
         try:
             x_min, y_min, x_max, y_max = map(int, data["xyxy"])
             class_name = data["class_name"]
@@ -155,8 +145,7 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
             if region_img.size == 0:
                 logger.warning(f"Empty region for class: {class_name}. Skipping.")
                 continue
-            is_mrz = "MRZ" in class_name.upper()
-            region_img = preprocess_image(region_img, is_mrz=is_mrz)
+            region_img = preprocess_image(region_img)
             region_h, region_w = region_img.shape[:2]
 
             # Create black canvas and center the cropped region
@@ -170,32 +159,29 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
             black_canvas[top_left_y:top_left_y+region_h, top_left_x:top_left_x+region_w] = region_img
 
             # Perform OCR
-            ocr_result = OCR.ocr(black_canvas, cls=True) or []
-            extracted_text = ""
-            if ocr_result:
-                try:
-                    extracted_text = " ".join(word_info[1][0] for line in ocr_result for word_info in line if word_info and len(word_info) > 1 and len(word_info[1]) > 0)
-                except (IndexError, TypeError) as e:
-                    logger.error(f"Error processing OCR result for class {class_name}: {e}")
-                    extracted_text = "OCR failed"
-            else:
-                logger.warning(f"No OCR results for class: {class_name}")
-                extracted_text = "No text detected"
-
+            ocr_result = OCR.ocr(black_canvas, cls=True)
+            if ocr_result is None:
+                ocr_result = []
+            extracted_text = " ".join(
+                word_info[1][0] for line in ocr_result for word_info in line if word_info and len(word_info) > 1 and len(word_info[1]) > 0
+            ) if ocr_result else "No text detected"
             detected_text[class_name] = extracted_text
 
             # Draw OCR bounding boxes
             for line in ocr_result:
+                if line is None:
+                    continue
                 for word_info in line:
-                    if word_info and len(word_info) > 0:
-                        try:
-                            box = word_info[0]
-                            x1, y1 = int(box[0][0]), int(box[0][1])
-                            x2, y2 = int(box[2][0]), int(box[2][1])
-                            cv2.rectangle(black_canvas, (x1, y1), (x2, y2), (0, 255, 0), 5)
-                        except (IndexError, TypeError) as e:
-                            logger.error(f"Error drawing OCR box for class {class_name}: {e}")
-                            continue
+                    if word_info is None:
+                        continue
+                    try:
+                        box = word_info[0]
+                        x1, y1 = int(box[0][0]), int(box[0][1])
+                        x2, y2 = int(box[2][0]), int(box[2][1])
+                        cv2.rectangle(black_canvas, (x1, y1), (x2, y2), (0, 255, 0), 5)
+                    except (IndexError, TypeError) as e:
+                        logger.error(f"Error drawing OCR box for class {class_name}: {e}")
+                        continue
 
             # Save processed image
             processed_images.append((class_name, black_canvas, extracted_text))
