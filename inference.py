@@ -46,12 +46,22 @@ def enhance_contrast(image):
     l = clahe.apply(l)
     return cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
 
-def preprocess_image(image):
-    """Applies all preprocessing steps."""
+def preprocess_mrz(image):
+    """Special preprocessing for MRZ regions."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(8,8))
+    gray = clahe.apply(gray)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+
+def preprocess_image(image, is_mrz=False):
+    """Applies preprocessing steps, with special handling for MRZ."""
     if isinstance(image, str):
         image = cv2.imread(image)
     if image is None or not isinstance(image, np.ndarray):
         raise ValueError("Invalid image input. Provide a valid file path or numpy array.")
+    if is_mrz:
+        return preprocess_mrz(image)
     image = upscale_image(image, scale=2)
     image = unblur_image(image)
     image = denoise_image(image)
@@ -105,11 +115,12 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
     # Run inference
     results = model(image_path)
     filtered_boxes = {}
+    class_counts = {}  # Track multiple instances of the same class
     output_image = results[0].orig_img.copy()
     original_image = cv2.imread(image_path)
     h, w, _ = output_image.shape
 
-    # Filter highest confidence box for each class
+    # Filter boxes, allowing multiple instances of the same class
     for result in results:
         if not result.boxes:
             logger.warning("No boxes detected in the image.")
@@ -119,16 +130,19 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
                 cls = int(box.cls[0].item())
                 conf = box.conf[0].item()
                 xyxy = box.xyxy[0].tolist()
-                if cls not in filtered_boxes or conf > filtered_boxes[cls]["conf"]:
-                    filtered_boxes[cls] = {"conf": conf, "xyxy": xyxy, "class_name": class_names[cls]}
+                class_name = class_names[cls]
+                class_counts[class_name] = class_counts.get(class_name, 0) + 1
+                unique_class_name = f"{class_name}_{class_counts[class_name]}" if class_counts[class_name] > 1 else class_name
+                filtered_boxes[unique_class_name] = {"conf": conf, "xyxy": xyxy, "class_name": unique_class_name}
+                logger.info(f"Detected box for class: {unique_class_name}, confidence: {conf:.2f}")
             except IndexError as e:
-                logger.error(f"Error processing box: {e}")
+                logger.error(f"Error processing box: {e}, box data: {box}")
                 continue
 
     # Extract text and visualize
     detected_text = {}
     processed_images = []
-    for cls, data in filtered_boxes.items():
+    for unique_class_name, data in filtered_boxes.items():
         try:
             x_min, y_min, x_max, y_max = map(int, data["xyxy"])
             class_name = data["class_name"]
@@ -141,7 +155,8 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
             if region_img.size == 0:
                 logger.warning(f"Empty region for class: {class_name}. Skipping.")
                 continue
-            region_img = preprocess_image(region_img)
+            is_mrz = "MRZ" in class_name.upper()
+            region_img = preprocess_image(region_img, is_mrz=is_mrz)
             region_h, region_w = region_img.shape[:2]
 
             # Create black canvas and center the cropped region
