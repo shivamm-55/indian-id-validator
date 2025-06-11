@@ -122,9 +122,10 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
                     continue
                 conf = box.conf[0].item()
                 xyxy = box.xyxy[0].tolist()
+                class_name = class_names[cls]
+                logger.info(f"Detected box for class index: {cls}, class name: {class_name}, confidence: {conf:.2f}, coords: {xyxy}")
                 if cls not in filtered_boxes or conf > filtered_boxes[cls]["conf"]:
-                    filtered_boxes[cls] = {"conf": conf, "xyxy": xyxy, "class_name": class_names[cls]}
-                    logger.info(f"Detected box for class: {class_names[cls]}, confidence: {conf:.2f}")
+                    filtered_boxes[cls] = {"conf": conf, "xyxy": xyxy, "class_name": class_name}
             except IndexError as e:
                 logger.error(f"Error processing box: {e}, box data: {box}")
                 continue
@@ -165,6 +166,7 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
             extracted_text = " ".join(
                 word_info[1][0] for line in ocr_result for word_info in line if word_info and len(word_info) > 1 and len(word_info[1]) > 0
             ) if ocr_result else "No text detected"
+            logger.info(f"Extracted text for {class_name}: {extracted_text}")
             detected_text[class_name] = extracted_text
 
             # Draw OCR bounding boxes
