@@ -56,12 +56,25 @@
             "type": "detection",
             "path": "models/Voter_Id.pt",
             "classes": [
-                "Voter_Id",
-                "Name",
-                "Father's Name",
+                "Address",
+                "Age",
                 "DOB",
+                "Card Voter ID 1 Back",
+                "Card Voter ID 2 Front",
+                "Card Voter ID 2 Back",
+                "Card Voter ID 1 Front",
+                "DOB",
+                "Date of Issue",
+                "Election",
+                "Father",
                 "Gender",
-                "Address"
+                "Name",
+                "Point",
+                "Portrait",
+                "Symbol",
+                "Voter ID",
+                "Portrait",
+                "Card Voter ID 1 Back"
             ]
         },
         "Driving_License": {
