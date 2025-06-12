@@ -4,11 +4,13 @@
             "type": "classification",
             "path": "models/Id_Classifier.pt",
             "classes": [
+                "aadhar_back",
                 "aadhar_front",
+                "driving_license_back",
+                "driving_license_front",
                 "pan_card_front",
                 "passport",
-                "voter_id",
-                "driving_license_front"
+                "voter_id"
             ]
         },
         "Aadhaar": {
@@ -81,23 +83,25 @@
             "type": "detection",
             "path": "models/Driving_License.pt",
             "classes": [
-                "Address", 
-                "Blood Group", 
-                "DL No", 
-                "DOB", 
-                "Name", 
-                "Relation With", 
-                "RTO", 
-                "State", 
+                "Address",
+                "Blood Group",
+                "DL No",
+                "DOB",
+                "Name",
+                "Relation With",
+                "RTO",
+                "State",
                 "Vehicle Type"
             ]
         }
     },
     "doc_type_to_model": {
         "aadhar_front": "Aadhaar",
+        "aadhar_back": "Aadhaar",
         "pan_card_front": "Pan_Card",
         "passport": "Passport",
         "voter_id": "Voter_Id",
-        "driving_license_front": "Driving_License"
+        "driving_license_front": "Driving_License",
+        "driving_license_back": "Driving_License"
     }
 }
