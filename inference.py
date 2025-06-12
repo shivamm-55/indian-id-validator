@@ -11,6 +11,8 @@ import logging
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+# Suppress ultralytics verbose output
+logging.getLogger("ultralytics").setLevel(logging.WARNING)
 
 # Load configuration
 def load_config(config_path="config.json"):
@@ -22,7 +24,7 @@ def load_config(config_path="config.json"):
 CONFIG = load_config()
 
 # Initialize PaddleOCR
-OCR = PaddleOCR(use_angle_cls=True, lang="en")
+OCR = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
 
 # Preprocessing functions
 def upscale_image(image, scale=2):
@@ -59,7 +61,7 @@ def preprocess_image(image):
     return image
 
 # Core inference function
-def process_id(image_path, model_name=None, save_json=True, output_json="detected_text.json", verbose=False):
+def process_id(image_path, model_name=None, save_json=True, output_json="detected_text.json", verbose=False, classify_only=False):
     """
     Process an ID image to classify document type, detect fields, and extract text.
     
@@ -69,9 +71,10 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
         save_json (bool): Save extracted text to JSON file.
         output_json (str): Path to save JSON output.
         verbose (bool): Display visualizations.
+        classify_only (bool): If True, only classify document type and return result.
     
     Returns:
-        dict: Extracted text for each detected field, or {} for unmapped document types.
+        dict: Extracted text for each detected field, or {} for unmapped document types or classify_only.
     """
     # Load image
     image = cv2.imread(image_path)
@@ -91,8 +94,10 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
         results = classifier(image)
         doc_type = results[0].names[results[0].probs.top1]
         confidence = results[0].probs.top1conf.item()
-        print(f"Id_Classifier Result: Detected document type: {doc_type} with confidence: {confidence:.2f}")
+        print(f"Detected document type: {doc_type} with confidence: {confidence:.2f}")
         logger.info(f"Detected document type: {doc_type}, confidence: {confidence:.2f}")
+        if classify_only:
+            return {"doc_type": doc_type, "confidence": confidence}
         model_name = CONFIG["doc_type_to_model"].get(doc_type, None)
         if model_name is None:
             logger.warning(f"No detection model mapped for document type: {doc_type}. Returning empty result.")
@@ -261,8 +266,9 @@ if __name__ == "__main__":
     parser.add_argument("--no-save-json", action="store_false", dest="save_json", help="Disable saving to JSON")
     parser.add_argument("--output-json", default="detected_text.json", help="Path to save JSON output")
     parser.add_argument("--verbose", action="store_true", help="Display visualizations")
+    parser.add_argument("--classify-only", action="store_true", dest="classify_only", help="Only classify document type")
     args = parser.parse_args()
 
-    result = process_id(args.image_path, args.model, args.save_json, args.output_json, args.verbose)
+    result = process_id(args.image_path, args.model, args.save_json, args.output_json, args.verbose, args.classify_only)
     print("Extracted Text:")
     print(json.dumps(result, indent=4))
