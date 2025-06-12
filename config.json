@@ -81,12 +81,15 @@
             "type": "detection",
             "path": "models/Driving_License.pt",
             "classes": [
-                "DL",
-                "Name",
-                "DOB",
-                "DOI",
-                "EXP",
-                "Address"
+                "Address", 
+                "Blood Group", 
+                "DL No", 
+                "DOB", 
+                "Name", 
+                "Relation With", 
+                "RTO", 
+                "State", 
+                "Vehicle Type"
             ]
         }
     },
