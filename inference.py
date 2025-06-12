@@ -172,11 +172,19 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
 
             # Perform OCR
             ocr_result = OCR.ocr(black_canvas, cls=True)
-            if ocr_result is None:
-                ocr_result = []
-            extracted_text = " ".join(
-                word_info[1][0] for line in ocr_result for word_info in line if word_info and len(word_info) > 1 and len(word_info[1]) > 0
-            ) if ocr_result else "No text detected"
+            if ocr_result is None or not ocr_result:
+                logger.warning(f"No OCR result for class: {class_name}. Skipping.")
+                detected_text[class_name] = "No text detected"
+                continue
+            extracted_text = []
+            for line in ocr_result:
+                if line is None:
+                    continue
+                for word_info in line:
+                    if word_info is None or len(word_info) < 2 or not word_info[1]:
+                        continue
+                    extracted_text.append(word_info[1][0])
+            extracted_text = " ".join(extracted_text) if extracted_text else "No text detected"
             logger.info(f"Extracted text for {class_name}: {extracted_text}")
             detected_text[class_name] = extracted_text
 
@@ -185,7 +193,7 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
                 if line is None:
                     continue
                 for word_info in line:
-                    if word_info is None:
+                    if word_info is None or len(word_info) < 1:
                         continue
                     try:
                         box = word_info[0]
