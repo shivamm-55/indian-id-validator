@@ -14,6 +14,7 @@ tags:
 - OCR
 - YOLO
 - PyTorch
+- PaddlePaddle
 ---
 # Indian ID Validator
 
