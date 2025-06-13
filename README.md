@@ -15,6 +15,147 @@ tags:
 - YOLO
 - PyTorch
 - PaddlePaddle
+- computer-vision
+- image-classification
+- object-detection
+- indian-id
+- document-processing
+model-index:
+  - name: Id_Classifier
+    results:
+      - task:
+          type: image-classification
+        dataset:
+          name: custom-indian-id-dataset
+          type: custom-indian-id-dataset
+        metrics:
+          - name: Accuracy (Top-1)
+            type: accuracy_top1
+            value: 0.995
+          - name: Accuracy (Top-5)
+            type: accuracy_top5
+            value: 1.0
+        source:
+          name: Ultralytics Hub
+          url: https://hub.ultralytics.com/models/QnJjO78MxBaRVeX2wOO4
+  - name: Aadhaar
+    results:
+      - task:
+          type: object-detection
+        dataset:
+          name: custom-indian-id-dataset
+          type: custom-indian-id-dataset
+        metrics:
+          - name: mAP50
+            type: mAP50
+            value: 0.795
+          - name: mAP50-95
+            type: mAP50-95
+            value: 0.553
+          - name: Precision
+            type: precision
+            value: 0.777
+          - name: Recall
+            type: recall
+            value: 0.774
+          - name: Fitness
+            type: fitness
+            value: 0.577
+        source:
+          name: Kaggle Notebook
+          url: https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar
+  - name: Driving_License
+    results:
+      - task:
+          type: object-detection
+        dataset:
+          name: custom-indian-id-dataset
+          type: custom-indian-id-dataset
+        metrics:
+          - name: mAP50
+            type: mAP50
+            value: 0.690
+          - name: mAP50-95
+            type: mAP50-95
+            value: 0.524
+          - name: Precision
+            type: precision
+            value: 0.752
+          - name: Recall
+            type: recall
+            value: 0.669
+        source:
+          name: Ultralytics Hub
+          url: https://hub.ultralytics.com/models/eaHzQ79umKwJkic9DXbm
+  - name: Pan_Card
+    results:
+      - task:
+          type: object-detection
+        dataset:
+          name: custom-indian-id-dataset
+          type: custom-indian-id-dataset
+        metrics:
+          - name: mAP50
+            type: mAP50
+            value: 0.924
+          - name: mAP50-95
+            type: mAP50-95
+            value: 0.686
+          - name: Precision
+            type: precision
+            value: 0.902
+          - name: Recall
+            type: recall
+            value: 0.901
+        source:
+          name: Ultralytics Hub
+          url: https://hub.ultralytics.com/models/Yj4aJ34fK02MkrHFSXq0
+  - name: Passport
+    results:
+      - task:
+          type: object-detection
+        dataset:
+          name: custom-indian-id-dataset
+          type: custom-indian-id-dataset
+        metrics:
+          - name: mAP50
+            type: mAP50
+            value: 0.987
+          - name: mAP50-95
+            type: mAP50-95
+            value: 0.851
+          - name: Precision
+            type: precision
+            value: 0.972
+          - name: Recall
+            type: recall
+            value: 0.967
+        source:
+          name: Ultralytics Hub
+          url: https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z
+  - name: Voter_Id
+    results:
+      - task:
+          type: object-detection
+        dataset:
+          name: custom-indian-id-dataset
+          type: custom-indian-id-dataset
+        metrics:
+          - name: mAP50
+            type: mAP50
+            value: 0.917
+          - name: mAP50-95
+            type: mAP50-95
+            value: 0.772
+          - name: Precision
+            type: precision
+            value: 0.922
+          - name: Recall
+            type: recall
+            value: 0.873
+        source:
+          name: Ultralytics Hub
+          url: https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp
 ---
 # Indian ID Validator
 
@@ -38,64 +179,18 @@ Supported ID types:
 
 ## Models
 
-### Id_Classifier
-- **Model**: YOLO11l-cls
-- **Classes**: `aadhar_back`, `aadhar_front`, `driving_license_back`, `driving_license_front`, `pan_card_front`, `passport`, `voter_id`
-- **Metrics**:
-  - Accuracy (Top-1): 0.995
-  - Accuracy (Top-5): 1.0
-- **Link**: [Ultralytics Hub](https://hub.ultralytics.com/models/QnJjO78MxBaRVeX2wOO4)
+The following models are used in the pipeline. You can download them from their respective Ultralytics Hub links in various formats such as PyTorch, ONNX, TensorRT, and more for deployment in different environments.
 
-### Aadhaar
-- **Model**: YOLO11l
-- **Classes**: `Aadhaar_Number`, `Aadhaar_DOB`, `Aadhaar_Gender`, `Aadhaar_Name`, `Aadhaar_Address`
-- **Metrics**:
-  - mAP50: 0.795
-  - mAP50-95: 0.553
-  - Precision: 0.777
-  - Recall: 0.774
-  - Fitness: 0.577
-- **Link**: [Kaggle Notebook](https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar)
+| Model Name       | Type              | Classes                                                                                                                                           | Link                                      |
+|------------------|-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------|
+| Id_Classifier    | YOLO11l-cls       | `aadhar_back`, `aadhar_front`, `driving_license_back`, `driving_license_front`, `pan_card_front`, `passport`, `voter_id`                         | [Ultralytics Hub](https://hub.ultralytics.com/models/QnJjO78MxBaRVeX2wOO4) |
+| Aadhaar          | YOLO11l           | `Aadhaar_Number`, `Aadhaar_DOB`, `Aadhaar_Gender`, `Aadhaar_Name`, `Aadhaar_Address`                                                             | [Kaggle Notebook](https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar) |
+| Driving_License  | YOLO11l           | `Address`, `Blood Group`, `DL No`, `DOB`, `Name`, `Relation With`, `RTO`, `State`, `Vehicle Type`                                                | [Ultralytics Hub](https://hub.ultralytics.com/models/eaHzQ79umKwJkic9DXbm) |
+| Pan_Card         | YOLO11l           | `PAN`, `Name`, `Father's Name`, `DOB`, `Pan Card`                                                                                                | [Ultralytics Hub](https://hub.ultralytics.com/models/Yj4aJ34fK02MkrHFSXq0) |
+| Passport         | YOLO11l           | `Address`, `Code`, `DOB`, `DOI`, `EXP`, `Gender`, `MRZ1`, `MRZ2`, `Name`, `Nationality`, `Nation`, `POI`                                        | [Ultralytics Hub](https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z) |
+| Voter_Id         | YOLO11l           | `Address`, `Age`, `DOB`, `Card Voter ID 1 Back`, `Card Voter ID 2 Front`, `Card Voter ID 2 Back`, `Card Voter ID 1 Front`, `Date of Issue`, `Election`, `Father`, `Gender`, `Name`, `Point`, `Portrait`, `Symbol`, `Voter ID` | [Ultralytics Hub](https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp) |
 
-### Driving_License
-- **Model**: YOLO11l
-- **Classes**: `Address`, `Blood Group`, `DL No`, `DOB`, `Name`, `Relation With`, `RTO`, `State`, `Vehicle Type`
-- **Metrics**:
-  - mAP50: 0.690
-  - mAP50-95: 0.524
-  - Precision: 0.752
-  - Recall: 0.669
-- **Link**: [Ultralytics Hub](https://hub.ultralytics.com/models/eaHzQ79umKwJkic9DXbm)
-
-### Pan_Card
-- **Model**: YOLO11l
-- **Classes**: `PAN`, `Name`, `Father's Name`, `DOB`, `Pan Card`
-- **Metrics**:
-  - mAP50: 0.924
-  - mAP50-95: 0.686
-  - Precision: 0.902
-  - Recall: 0.901
-- **Link**: [Ultralytics Hub](https://hub.ultralytics.com/models/Yj4aJ34fK02MkrHFSXq0)
-
-### Passport
-- **Model**: YOLO11l
-- **Classes**: `Address`, `Code`, `DOB`, `DOI`, `EXP`, `Gender`, `MRZ1`, `MRZ2`, `Name`, `Nationality`, `Nation`, `POI`
-- **Metrics**:
-  - mAP50: 0.987
-  - mAP50-95: 0.851
-  - Precision: 0.972
-  - Recall: 0.967
-- **Link**: [Ultralytics Hub](https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z)
-
-### Voter_Id
-- **Model**: YOLO11l
-- **Classes**: `Address`, `Age`, `DOB`, `Card Voter ID 1 Back`, `Card Voter ID 2 Front`, `Card Voter ID 2 Back`, `Card Voter ID 1 Front`, `Date of Issue`, `Election`, `Father`, `Gender`, `Name`, `Point`, `Portrait`, `Symbol`, `Voter ID`
-- **Metrics**:
-  - mAP50: 0.917
-  - mAP50-95: 0.772
-  - Precision: 0.922
-  - Recall: 0.873
-- **Link**: [Ultralytics Hub](https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp)
+**Note**: Metrics for each model are available in the `model-index` section of the YAML metadata at the top of this README. Refer to those for detailed evaluation results.
 
 ## Installation
 
@@ -113,7 +208,7 @@ Supported ID types:
    The `requirements.txt` includes `ultralytics`, `paddleocr`, `paddlepaddle`, `numpy==1.24.4`, `pandas==2.2.2`, and others.
 
 3. **Download Models**:
-   Models are downloaded automatically via `inference.py` from the Hugging Face repository. Ensure `config.json` is in the root directory.
+   Models are downloaded automatically via `inference.py` from the Hugging Face repository. Ensure `config.json` is in the root directory. Alternatively, use the Ultralytics Hub links above to download models in formats like PyTorch, ONNX, etc.
 
 ## Usage
 
@@ -192,37 +287,27 @@ print(json.dumps(result, indent=4))
 **Visualizations**:
 The `verbose=True` flag generates visualizations for the raw image, bounding boxes, and each detected field with extracted text. Below are the results for `passport_front.jpg`:
 
-- **Raw Image**:
-  ![Raw Image](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture1.jpeg)
+| **Type**                     | **Image**                                                                                     |
+|------------------------------|-----------------------------------------------------------------------------------------------|
+| **Raw Image**                | ![Raw Image](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture1.jpeg) |
+| **Output with Bounding Boxes** | ![Output with Bounding Boxes](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture2.jpeg) |
 
-- **Output with Bounding Boxes**:
-  ![Output with Bounding Boxes](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture2.jpeg)
+**Detected Fields**:
 
-- **Detected Fields**:
-  - **Address**:
-    ![Address](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture9.png)
-  - **Code**:
-    ![Code](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture7.png)
-  - **DOB**:
-    ![DOB](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture4.png)
-  - **DOI**:
-    ![DOI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture6.png)
-  - **EXP**:
-    ![EXP](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture8.png)
-  - **Gender**:
-    ![Gender](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture12.png)
-  - **MRZ1**:
-    ![MRZ1](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture13.png)
-  - **MRZ2**:
-    ![MRZ2](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture14.png)
-  - **Name**:
-    ![Name](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture10.png)
-  - **Nationality**:
-    ![Nationality](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture11.png)
-  - **Nation**:
-    ![Nation](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture3.png)
-  - **POI**:
-    ![POI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture5.png)
+| **Field**      | **Image**                                                                                     |
+|----------------|-----------------------------------------------------------------------------------------------|
+| **Address**    | ![Address](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture9.png) |
+| **Code**       | ![Code](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture7.png) |
+| **DOB**        | ![DOB](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture4.png) |
+| **DOI**        | ![DOI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture6.png) |
+| **EXP**        | ![EXP](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture8.png) |
+| **Gender**     | ![Gender](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture12.png) |
+| **MRZ1**       | ![MRZ1](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture13.png) |
+| **MRZ2**       | ![MRZ2](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture14.png) |
+| **Name**       | ![Name](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture10.png) |
+| **Nationality**| ![Nationality](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture11.png) |
+| **Nation**     | ![Nation](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture3.png) |
+| **POI**        | ![POI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture5.png) |
 
 **Output**:
 ```
@@ -294,3 +379,7 @@ Contributions are welcome! To contribute:
 3. Submit a pull request with your changes.
 
 Report issues or suggest features via the [Hugging Face Issues](https://huggingface.co/logasanjeev/indian-id-validator/discussions) page.
+
+## License
+
+MIT License
