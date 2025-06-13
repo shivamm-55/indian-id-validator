@@ -192,10 +192,10 @@ print(json.dumps(result, indent=4))
 The `verbose=True` flag generates visualizations for the raw image, bounding boxes, and each detected field with extracted text. Below are the results for `passport_front.jpg`:
 
 - **Raw Image**:
-  ![Raw Image](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture1.png)
+  ![Raw Image](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture1.jpeg)
 
 - **Output with Bounding Boxes**:
-  ![Output with Bounding Boxes](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture2.png)
+  ![Output with Bounding Boxes](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture2.jpeg)
 
 - **Detected Fields**:
   - **Address**:
