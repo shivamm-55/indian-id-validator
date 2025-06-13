@@ -171,7 +171,7 @@ The **Indian ID Validator** uses deep learning to:
 - **Detect** specific fields (e.g., Aadhaar Number, DOB, Name) using type-specific YOLO11 detection models.
 - **Extract** text from detected fields via PaddleOCR with image preprocessing (upscaling, denoising, contrast enhancement).
 
-Supported ID types:
+**Supported ID Types**:
 - Aadhaar (front and back)
 - PAN Card (front)
 - Passport (front)
@@ -180,31 +180,31 @@ Supported ID types:
 
 ## Models
 
-The following models are used in the pipeline. You can download them from their respective Ultralytics Hub links in various formats such as PyTorch, ONNX, TensorRT, and more for deployment in different environments.
+The pipeline consists of the following models, each designed for specific tasks in the ID validation process. Models can be downloaded from their respective Ultralytics Hub links in various formats such as PyTorch, ONNX, TensorRT, and more for deployment in different environments.
 
-| Model Name       | Type              | Classes                                                                                                                                           | Link                                      |
-|------------------|-------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------|
-| Id_Classifier    | YOLO11l-cls       | `aadhar_back`, `aadhar_front`, `driving_license_back`, `driving_license_front`, `pan_card_front`, `passport`, `voter_id`                         | [Ultralytics Hub](https://hub.ultralytics.com/models/QnJjO78MxBaRVeX2wOO4) |
-| Aadhaar          | YOLO11l           | `Aadhaar_Number`, `Aadhaar_DOB`, `Aadhaar_Gender`, `Aadhaar_Name`, `Aadhaar_Address`                                                             | [Kaggle Notebook](https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar) |
-| Driving_License  | YOLO11l           | `Address`, `Blood Group`, `DL No`, `DOB`, `Name`, `Relation With`, `RTO`, `State`, `Vehicle Type`                                                | [Ultralytics Hub](https://hub.ultralytics.com/models/eaHzQ79umKwJkic9DXbm) |
-| Pan_Card         | YOLO11l           | `PAN`, `Name`, `Father's Name`, `DOB`, `Pan Card`                                                                                                | [Ultralytics Hub](https://hub.ultralytics.com/models/Yj4aJ34fK02MkrHFSXq0) |
-| Passport         | YOLO11l           | `Address`, `Code`, `DOB`, `DOI`, `EXP`, `Gender`, `MRZ1`, `MRZ2`, `Name`, `Nationality`, `Nation`, `POI`                                        | [Ultralytics Hub](https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z) |
-| Voter_Id         | YOLO11l           | `Address`, `Age`, `DOB`, `Card Voter ID 1 Back`, `Card Voter ID 2 Front`, `Card Voter ID 2 Back`, `Card Voter ID 1 Front`, `Date of Issue`, `Election`, `Father`, `Gender`, `Name`, `Point`, `Portrait`, `Symbol`, `Voter ID` | [Ultralytics Hub](https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp) |
+| Model Name       | Type        | Description                                                                                   | Link                                      |
+|------------------|-------------|-----------------------------------------------------------------------------------------------|-------------------------------------------|
+| Id_Classifier    | YOLO11l-cls | Classifies the type of Indian ID document (e.g., Aadhaar, Passport).                          | [Ultralytics Hub](https://hub.ultralytics.com/models/QnJjO78MxBaRVeX2wOO4) |
+| Aadhaar          | YOLO11l     | Detects fields on Aadhaar cards (front and back), such as Aadhaar Number, DOB, and Address.   | [Kaggle Notebook](https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar) |
+| Driving_License  | YOLO11l     | Detects fields on Driving Licenses (front and back), including DL No, DOB, and Vehicle Type.  | [Ultralytics Hub](https://hub.ultralytics.com/models/eaHzQ79umKwJkic9DXbm) |
+| Pan_Card         | YOLO11l     | Detects fields on PAN Cards, such as PAN Number, Name, and DOB.                               | [Ultralytics Hub](https://hub.ultralytics.com/models/Yj4aJ34fK02MkrHFSXq0) |
+| Passport         | YOLO11l     | Detects fields on Passports, including MRZ lines, DOB, and Nationality.                       | [Ultralytics Hub](https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z) |
+| Voter_Id         | YOLO11l     | Detects fields on Voter ID cards (front and back), such as Voter ID, Name, and Address.       | [Ultralytics Hub](https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp) |
 
-## Metrics Summary
+## Model Details
 
-Below is a summary of the evaluation metrics for each model, tested on a custom Indian ID dataset.
+Below is a detailed breakdown of each model, including the classes they detect and their evaluation metrics on a custom Indian ID dataset.
 
-| Model Name       | Task                | Metrics                                                                                   |
-|------------------|---------------------|-------------------------------------------------------------------------------------------|
-| **Id_Classifier**| Image Classification| Accuracy (Top-1): 0.995, Accuracy (Top-5): 1.0                                           |
-| **Aadhaar**      | Object Detection    | mAP50: 0.795, mAP50-95: 0.553, Precision: 0.777, Recall: 0.774, Fitness: 0.577          |
-| **Driving_License**| Object Detection  | mAP50: 0.690, mAP50-95: 0.524, Precision: 0.752, Recall: 0.669                           |
-| **Pan_Card**     | Object Detection    | mAP50: 0.924, mAP50-95: 0.686, Precision: 0.902, Recall: 0.901                           |
-| **Passport**     | Object Detection    | mAP50: 0.987, mAP50-95: 0.851, Precision: 0.972, Recall: 0.967                           |
-| **Voter_Id**     | Object Detection    | mAP50: 0.917, mAP50-95: 0.772, Precision: 0.922, Recall: 0.873                           |
+| Model Name       | Task                | Classes                                                                                   | Metrics                                                                                   |
+|------------------|---------------------|-------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
+| **Id_Classifier**| Image Classification| `aadhar_back`, `aadhar_front`, `driving_license_back`, `driving_license_front`, `pan_card_front`, `passport`, `voter_id` | Accuracy (Top-1): 0.995, Accuracy (Top-5): 1.0                                           |
+| **Aadhaar**      | Object Detection    | `Aadhaar_Number`, `Aadhaar_DOB`, `Aadhaar_Gender`, `Aadhaar_Name`, `Aadhaar_Address`     | mAP50: 0.795, mAP50-95: 0.553, Precision: 0.777, Recall: 0.774, Fitness: 0.577          |
+| **Driving_License**| Object Detection  | `Address`, `Blood Group`, `DL No`, `DOB`, `Name`, `Relation With`, `RTO`, `State`, `Vehicle Type` | mAP50: 0.690, mAP50-95: 0.524, Precision: 0.752, Recall: 0.669                           |
+| **Pan_Card**     | Object Detection    | `PAN`, `Name`, `Father's Name`, `DOB`, `Pan Card`                                        | mAP50: 0.924, mAP50-95: 0.686, Precision: 0.902, Recall: 0.901                           |
+| **Passport**     | Object Detection    | `Address`, `Code`, `DOB`, `DOI`, `EXP`, `Gender`, `MRZ1`, `MRZ2`, `Name`, `Nationality`, `Nation`, `POI` | mAP50: 0.987, mAP50-95: 0.851, Precision: 0.972, Recall: 0.967                           |
+| **Voter_Id**     | Object Detection    | `Address`, `Age`, `DOB`, `Card Voter ID 1 Back`, `Card Voter ID 2 Front`, `Card Voter ID 2 Back`, `Card Voter ID 1 Front`, `Date of Issue`, `Election`, `Father`, `Gender`, `Name`, `Point`, `Portrait`, `Symbol`, `Voter ID` | mAP50: 0.917, mAP50-95: 0.772, Precision: 0.922, Recall: 0.873                           |
 
-For detailed evaluation results and sources, refer to the `model-index` section in the YAML metadata at the top of this README.
+For additional details, refer to the `model-index` section in the YAML metadata at the top of this README.
 
 ## Installation
 
