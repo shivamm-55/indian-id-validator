@@ -13,7 +13,7 @@ pipeline_tag: image-to-text
 tags:
 - OCR
 - YOLO
-- Pytorch
+- PyTorch
 ---
 # Indian ID Validator
 
@@ -192,36 +192,36 @@ print(json.dumps(result, indent=4))
 The `verbose=True` flag generates visualizations for the raw image, bounding boxes, and each detected field with extracted text. Below are the results for `passport_front.jpg`:
 
 - **Raw Image**:
-  ![Raw Image](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_raw_image.png)
+  ![Raw Image](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture1.png)
 
 - **Output with Bounding Boxes**:
-  ![Output with Bounding Boxes](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_output_bboxes.png)
+  ![Output with Bounding Boxes](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture2.png)
 
 - **Detected Fields**:
   - **Address**:
-    ![Address](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_Address.png)
+    ![Address](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture9.png)
   - **Code**:
-    ![Code](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_Code.png)
+    ![Code](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture7.png)
   - **DOB**:
-    ![DOB](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_DOB.png)
+    ![DOB](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture4.png)
   - **DOI**:
-    ![DOI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_DOI.png)
+    ![DOI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture6.png)
   - **EXP**:
-    ![EXP](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_EXP.png)
+    ![EXP](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture8.png)
   - **Gender**:
-    ![Gender](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_Gender.png)
+    ![Gender](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture12.png)
   - **MRZ1**:
-    ![MRZ1](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_MRZ1.png)
+    ![MRZ1](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture13.png)
   - **MRZ2**:
-    ![MRZ2](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_MRZ2.png)
+    ![MRZ2](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture14.png)
   - **Name**:
-    ![Name](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_Name.png)
+    ![Name](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture10.png)
   - **Nationality**:
-    ![Nationality](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_Nationality.png)
+    ![Nationality](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture11.png)
   - **Nation**:
-    ![Nation](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_Nation.png)
+    ![Nation](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture3.png)
   - **POI**:
-    ![POI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/passport_POI.png)
+    ![POI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture5.png)
 
 **Output**:
 ```
