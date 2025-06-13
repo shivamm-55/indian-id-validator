@@ -11,10 +11,10 @@ base_model:
 - Ultralytics/YOLO11
 pipeline_tag: image-to-text
 tags:
-- OCR
-- YOLO
-- PyTorch
-- PaddlePaddle
+- ocr
+- yolo
+- pytorch
+- paddlepaddle
 - computer-vision
 - image-classification
 - object-detection
@@ -190,7 +190,20 @@ The following models are used in the pipeline. You can download them from their 
 | Passport         | YOLO11l           | `Address`, `Code`, `DOB`, `DOI`, `EXP`, `Gender`, `MRZ1`, `MRZ2`, `Name`, `Nationality`, `Nation`, `POI`                                        | [Ultralytics Hub](https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z) |
 | Voter_Id         | YOLO11l           | `Address`, `Age`, `DOB`, `Card Voter ID 1 Back`, `Card Voter ID 2 Front`, `Card Voter ID 2 Back`, `Card Voter ID 1 Front`, `Date of Issue`, `Election`, `Father`, `Gender`, `Name`, `Point`, `Portrait`, `Symbol`, `Voter ID` | [Ultralytics Hub](https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp) |
 
-**Note**: Metrics for each model are available in the `model-index` section of the YAML metadata at the top of this README. Refer to those for detailed evaluation results.
+## Metrics Summary
+
+Below is a summary of the evaluation metrics for each model, tested on a custom Indian ID dataset.
+
+| Model Name       | Task                | Metrics                                                                                   |
+|------------------|---------------------|-------------------------------------------------------------------------------------------|
+| **Id_Classifier**| Image Classification| Accuracy (Top-1): 0.995, Accuracy (Top-5): 1.0                                           |
+| **Aadhaar**      | Object Detection    | mAP50: 0.795, mAP50-95: 0.553, Precision: 0.777, Recall: 0.774, Fitness: 0.577          |
+| **Driving_License**| Object Detection  | mAP50: 0.690, mAP50-95: 0.524, Precision: 0.752, Recall: 0.669                           |
+| **Pan_Card**     | Object Detection    | mAP50: 0.924, mAP50-95: 0.686, Precision: 0.902, Recall: 0.901                           |
+| **Passport**     | Object Detection    | mAP50: 0.987, mAP50-95: 0.851, Precision: 0.972, Recall: 0.967                           |
+| **Voter_Id**     | Object Detection    | mAP50: 0.917, mAP50-95: 0.772, Precision: 0.922, Recall: 0.873                           |
+
+For detailed evaluation results and sources, refer to the `model-index` section in the YAML metadata at the top of this README.
 
 ## Installation
 
