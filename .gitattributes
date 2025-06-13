@@ -38,3 +38,4 @@ samples/pan_front.jpg filter=lfs diff=lfs merge=lfs -text
 samples/voter_back.jpg filter=lfs diff=lfs merge=lfs -text
 results/Picture1.png filter=lfs diff=lfs merge=lfs -text
 results/Picture2.png filter=lfs diff=lfs merge=lfs -text
+results/Picture1.jpg filter=lfs diff=lfs merge=lfs -text
