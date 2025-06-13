@@ -20,142 +20,143 @@ tags:
 - object-detection
 - indian-id
 - document-processing
+- ultralytics
 model-index:
-  - name: Id_Classifier
-    results:
-      - task:
-          type: image-classification
-        dataset:
-          name: custom-indian-id-dataset
-          type: custom-indian-id-dataset
-        metrics:
-          - name: Accuracy (Top-1)
-            type: accuracy_top1
-            value: 0.995
-          - name: Accuracy (Top-5)
-            type: accuracy_top5
-            value: 1.0
-        source:
-          name: Ultralytics Hub
-          url: https://hub.ultralytics.com/models/QnJjO78MxBaRVeX2wOO4
-  - name: Aadhaar
-    results:
-      - task:
-          type: object-detection
-        dataset:
-          name: custom-indian-id-dataset
-          type: custom-indian-id-dataset
-        metrics:
-          - name: mAP50
-            type: mAP50
-            value: 0.795
-          - name: mAP50-95
-            type: mAP50-95
-            value: 0.553
-          - name: Precision
-            type: precision
-            value: 0.777
-          - name: Recall
-            type: recall
-            value: 0.774
-          - name: Fitness
-            type: fitness
-            value: 0.577
-        source:
-          name: Kaggle Notebook
-          url: https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar
-  - name: Driving_License
-    results:
-      - task:
-          type: object-detection
-        dataset:
-          name: custom-indian-id-dataset
-          type: custom-indian-id-dataset
-        metrics:
-          - name: mAP50
-            type: mAP50
-            value: 0.690
-          - name: mAP50-95
-            type: mAP50-95
-            value: 0.524
-          - name: Precision
-            type: precision
-            value: 0.752
-          - name: Recall
-            type: recall
-            value: 0.669
-        source:
-          name: Ultralytics Hub
-          url: https://hub.ultralytics.com/models/eaHzQ79umKwJkic9DXbm
-  - name: Pan_Card
-    results:
-      - task:
-          type: object-detection
-        dataset:
-          name: custom-indian-id-dataset
-          type: custom-indian-id-dataset
-        metrics:
-          - name: mAP50
-            type: mAP50
-            value: 0.924
-          - name: mAP50-95
-            type: mAP50-95
-            value: 0.686
-          - name: Precision
-            type: precision
-            value: 0.902
-          - name: Recall
-            type: recall
-            value: 0.901
-        source:
-          name: Ultralytics Hub
-          url: https://hub.ultralytics.com/models/Yj4aJ34fK02MkrHFSXq0
-  - name: Passport
-    results:
-      - task:
-          type: object-detection
-        dataset:
-          name: custom-indian-id-dataset
-          type: custom-indian-id-dataset
-        metrics:
-          - name: mAP50
-            type: mAP50
-            value: 0.987
-          - name: mAP50-95
-            type: mAP50-95
-            value: 0.851
-          - name: Precision
-            type: precision
-            value: 0.972
-          - name: Recall
-            type: recall
-            value: 0.967
-        source:
-          name: Ultralytics Hub
-          url: https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z
-  - name: Voter_Id
-    results:
-      - task:
-          type: object-detection
-        dataset:
-          name: custom-indian-id-dataset
-          type: custom-indian-id-dataset
-        metrics:
-          - name: mAP50
-            type: mAP50
-            value: 0.917
-          - name: mAP50-95
-            type: mAP50-95
-            value: 0.772
-          - name: Precision
-            type: precision
-            value: 0.922
-          - name: Recall
-            type: recall
-            value: 0.873
-        source:
-          name: Ultralytics Hub
-          url: https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp
+- name: Id_Classifier
+  results:
+  - task:
+      type: image-classification
+    dataset:
+      name: custom-indian-id-dataset
+      type: custom-indian-id-dataset
+    metrics:
+    - name: Accuracy (Top-1)
+      type: accuracy_top1
+      value: 0.995
+    - name: Accuracy (Top-5)
+      type: accuracy_top5
+      value: 1
+    source:
+      name: Ultralytics Hub
+      url: https://hub.ultralytics.com/models/QnJjO78MxBaRVeX2wOO4
+- name: Aadhaar
+  results:
+  - task:
+      type: object-detection
+    dataset:
+      name: custom-indian-id-dataset
+      type: custom-indian-id-dataset
+    metrics:
+    - name: mAP50
+      type: mAP50
+      value: 0.795
+    - name: mAP50-95
+      type: mAP50-95
+      value: 0.553
+    - name: Precision
+      type: precision
+      value: 0.777
+    - name: Recall
+      type: recall
+      value: 0.774
+    - name: Fitness
+      type: fitness
+      value: 0.577
+    source:
+      name: Kaggle Notebook
+      url: https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar
+- name: Driving_License
+  results:
+  - task:
+      type: object-detection
+    dataset:
+      name: custom-indian-id-dataset
+      type: custom-indian-id-dataset
+    metrics:
+    - name: mAP50
+      type: mAP50
+      value: 0.69
+    - name: mAP50-95
+      type: mAP50-95
+      value: 0.524
+    - name: Precision
+      type: precision
+      value: 0.752
+    - name: Recall
+      type: recall
+      value: 0.669
+    source:
+      name: Ultralytics Hub
+      url: https://hub.ultralytics.com/models/eaHzQ79umKwJkic9DXbm
+- name: Pan_Card
+  results:
+  - task:
+      type: object-detection
+    dataset:
+      name: custom-indian-id-dataset
+      type: custom-indian-id-dataset
+    metrics:
+    - name: mAP50
+      type: mAP50
+      value: 0.924
+    - name: mAP50-95
+      type: mAP50-95
+      value: 0.686
+    - name: Precision
+      type: precision
+      value: 0.902
+    - name: Recall
+      type: recall
+      value: 0.901
+    source:
+      name: Ultralytics Hub
+      url: https://hub.ultralytics.com/models/Yj4aJ34fK02MkrHFSXq0
+- name: Passport
+  results:
+  - task:
+      type: object-detection
+    dataset:
+      name: custom-indian-id-dataset
+      type: custom-indian-id-dataset
+    metrics:
+    - name: mAP50
+      type: mAP50
+      value: 0.987
+    - name: mAP50-95
+      type: mAP50-95
+      value: 0.851
+    - name: Precision
+      type: precision
+      value: 0.972
+    - name: Recall
+      type: recall
+      value: 0.967
+    source:
+      name: Ultralytics Hub
+      url: https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z
+- name: Voter_Id
+  results:
+  - task:
+      type: object-detection
+    dataset:
+      name: custom-indian-id-dataset
+      type: custom-indian-id-dataset
+    metrics:
+    - name: mAP50
+      type: mAP50
+      value: 0.917
+    - name: mAP50-95
+      type: mAP50-95
+      value: 0.772
+    - name: Precision
+      type: precision
+      value: 0.922
+    - name: Recall
+      type: recall
+      value: 0.873
+    source:
+      name: Ultralytics Hub
+      url: https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp
 ---
 # Indian ID Validator
 
