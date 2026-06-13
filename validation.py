@@ -203,6 +203,63 @@ def is_aadhaar_card(image):
         logger.error(f"Error in is_aadhaar_card check: {e}")
     return False
 
+def verify_identifier_presence(image, doc_type):
+    """
+    Verifies that the unique ID number field is present and contains readable text.
+    Acts as a secure check to filter out random, out-of-domain, or blank images.
+    """
+    try:
+        model = load_yolo_model(doc_type)
+        results = model(image, device=DEVICE)
+        class_names = CONFIG["models"][doc_type]["classes"]
+        
+        target_fields = {
+            "Aadhaar": {"Aadhaar"},
+            "Pan_Card": {"PAN"},
+            "Driving_License": {"DL No"},
+            "Voter_Id": {"Voter ID"},
+            "Passport": {"Code", "MRZ1", "MRZ2"}
+        }
+        
+        targets = target_fields.get(doc_type, set())
+        
+        for r in results:
+            if not r.boxes:
+                continue
+            for box in r.boxes:
+                cls_idx = int(box.cls[0].item())
+                conf = box.conf[0].item()
+                if cls_idx < len(class_names):
+                    name = class_names[cls_idx]
+                    if name in targets and conf >= 0.6:
+                        h, w, _ = image.shape
+                        x_min, y_min, x_max, y_max = map(int, box.xyxy[0].tolist())
+                        x_min, y_min = max(0, x_min), max(0, y_min)
+                        x_max, y_max = min(w, x_max), min(h, y_max)
+                        region = image[y_min:y_max, x_min:x_max]
+                        if region.size == 0:
+                            continue
+                            
+                        padded = cv2.copyMakeBorder(region, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                        from inference import OCR
+                        ocr_res = OCR.ocr(padded)
+                        if ocr_res:
+                            text_list = []
+                            for item in ocr_res:
+                                if isinstance(item, dict):
+                                    text_list.extend(item.get("rec_texts", []))
+                                elif isinstance(item, list):
+                                    for word in item:
+                                        if isinstance(word, list) and len(word) >= 2:
+                                            text_list.append(word[1][0])
+                            text = "".join(text_list).strip()
+                            if len(text) >= 4:
+                                logger.info(f"Verified identifier presence for {doc_type}: '{text}'")
+                                return True
+    except Exception as e:
+        logger.error(f"Error verifying identifier presence: {e}")
+    return False
+
 def confirm_document_type(image, doc_type, threshold=0.5):
     """
     Validates if the image contains features of the expected document type.
@@ -503,6 +560,24 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             logger.info(f"Overriding Aadhaar side from classifier ({detected_side}) to resolved side ({resolved_side})")
             detected_side = resolved_side
             
+    # Verify that the unique ID number field is present and readable on the document
+    # For DL and Voter ID, we only require it on the front side.
+    requires_id = True
+    if detected_type in ["Driving_License", "Voter_Id"] and detected_side == "back":
+        requires_id = False
+        
+    if requires_id:
+        if not verify_identifier_presence(image, detected_type):
+            logger.warning(f"Could not detect or read unique ID number on {image_path} for type {detected_type}.")
+            return {
+                "is_valid": False,
+                "status": "unable_to_verify",
+                "detected_type": detected_type,
+                "detected_side": detected_side,
+                "confidence": confidence,
+                "message": f"Verification failed: Unable to detect or read the unique ID identifier (e.g. Aadhaar No, Voter EPIC, PAN, DL No) on the document."
+            }
+
     # Normalize expected type for comparison
     norm_expected_type = normalize_document_type(expected_type)
     
