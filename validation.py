@@ -19,6 +19,7 @@ def normalize_document_type(expected_type):
     """
     Normalizes expected document type string into the canonical model names
     used in config.json (e.g. Aadhaar, Pan_Card, Driving_License, Passport, Voter_Id).
+    Returns None if the type does not represent a valid full document name.
     """
     if not expected_type or not isinstance(expected_type, str):
         return None
@@ -26,20 +27,16 @@ def normalize_document_type(expected_type):
     # Convert to lowercase and strip all spaces, underscores, and hyphens
     clean = expected_type.lower().replace(" ", "").replace("_", "").replace("-", "")
     
-    # Remove common suffix noise words
-    for word in ["card", "license", "id"]:
-        clean = clean.replace(word, "")
-        
     mapping = {
-        "aadhar": "Aadhaar",
         "aadhaar": "Aadhaar",
-        "pan": "Pan_Card",
+        "aadhar": "Aadhaar",
+        "pancard": "Pan_Card",
         "passport": "Passport",
-        "voter": "Voter_Id",
-        "dl": "Driving_License",
-        "driving": "Driving_License"
+        "voterid": "Voter_Id",
+        "votercard": "Voter_Id",
+        "drivinglicense": "Driving_License"
     }
-    return mapping.get(clean, expected_type)
+    return mapping.get(clean, None)
 
 # Replaced local load_yolo_model with import from inference.py for caching
 
