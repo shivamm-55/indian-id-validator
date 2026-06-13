@@ -1012,6 +1012,18 @@ def validate_document(front_image_path=None, back_image_path=None, expected_type
             "details": {}
         }
         
+    # Validate and normalize expected_type
+    norm_expected = normalize_document_type(expected_type)
+    valid_types = ["Aadhaar", "Pan_Card", "Passport", "Voter_Id", "Driving_License"]
+    if not norm_expected or norm_expected not in valid_types:
+        return {
+            "is_valid": False,
+            "status": "error",
+            "errors": [f"Invalid expected_type: '{expected_type}'. Supported types are: {', '.join(valid_types)}"],
+            "warnings": [],
+            "details": {}
+        }
+        
     # Initialize request-level cache to share loaded images, detections, and crop OCR results
     cache = {
         "images": {},       # image_path -> numpy array
