@@ -42,9 +42,9 @@ def load_yolo_model(model_key):
     model_path = model_entry["path"]
     
     if not os.path.exists(model_path) or os.path.getsize(model_path) < 1000:
-        logger.info(f"Model {model_key} not found or is placeholder at {model_path}. Downloading from Hugging Face Hub...")
+        logger.info(f"Model weights for {model_key} not found or placeholder at {model_path}. Downloading weights...")
         resolved_path = hf_hub_download(repo_id="logasanjeev/indian-id-validator", filename=model_path)
-        # Update CONFIG entry to bypass HF network check next time
+        # Update CONFIG entry to bypass network check next time
         model_entry["path"] = resolved_path
         model_path = resolved_path
         

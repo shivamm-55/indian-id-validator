@@ -2,9 +2,6 @@ import os
 import cv2
 import json
 import logging
-from ultralytics import YOLO
-from huggingface_hub import hf_hub_download
-
 # Import required components from the main pipeline
 from inference import CONFIG, process_id, load_yolo_model
 
