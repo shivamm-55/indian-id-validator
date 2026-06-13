@@ -177,6 +177,32 @@ def determine_driving_license_side(image_path):
     
     return None
 
+def is_aadhaar_card(image):
+    """
+    Checks if the image contains structural features that uniquely identify an Aadhaar card.
+    Useful for overriding classification errors where Aadhaar cards are misclassified as Voter ID.
+    """
+    try:
+        model = load_yolo_model("Aadhaar")
+        results = model(image, device=DEVICE)
+        class_names = CONFIG["models"]["Aadhaar"]["classes"]
+        for r in results:
+            if not r.boxes:
+                continue
+            for box in r.boxes:
+                cls_idx = int(box.cls[0].item())
+                conf = box.conf[0].item()
+                if cls_idx < len(class_names):
+                    name = class_names[cls_idx]
+                    # Confident Aadhaar number detection or critical front fields
+                    if name == "Aadhaar" and conf >= 0.7:
+                        return True
+                    if name in ["Name", "DOB", "Gender"] and conf >= 0.75:
+                        return True
+    except Exception as e:
+        logger.error(f"Error in is_aadhaar_card check: {e}")
+    return False
+
 def confirm_document_type(image, doc_type, threshold=0.5):
     """
     Validates if the image contains features of the expected document type.
@@ -188,7 +214,7 @@ def confirm_document_type(image, doc_type, threshold=0.5):
         
         class_names = CONFIG["models"][doc_type]["classes"]
         
-        detected_count = 0
+        detections = []
         for result in results:
             if not result.boxes:
                 continue
@@ -196,11 +222,38 @@ def confirm_document_type(image, doc_type, threshold=0.5):
                 cls_idx = int(box.cls[0].item())
                 conf = box.conf[0].item()
                 if cls_idx < len(class_names):
-                    if conf >= threshold:
-                        detected_count += 1
-                        
-        logger.info(f"confirm_document_type for '{doc_type}': detected {detected_count} structural fields.")
-        return detected_count >= 1
+                    detections.append((class_names[cls_idx], conf))
+                    
+        logger.info(f"confirm_document_type for '{doc_type}': detected fields {detections}")
+        
+        if doc_type == "Aadhaar":
+            has_high_conf_key = any(name in ["Aadhaar", "Address"] and conf >= 0.7 for name, conf in detections)
+            has_two_fields = len([conf for name, conf in detections if conf >= 0.5]) >= 2
+            return has_high_conf_key or has_two_fields
+            
+        elif doc_type == "Pan_Card":
+            has_key = any(name in ["PAN", "Pan Card"] and conf >= 0.6 for name, conf in detections)
+            has_two = len([conf for name, conf in detections if conf >= 0.5]) >= 2
+            return has_key or has_two
+            
+        elif doc_type == "Driving_License":
+            has_key = any(name in ["DL No", "Vehicle Type"] and conf >= 0.6 for name, conf in detections)
+            has_two = len([conf for name, conf in detections if conf >= 0.5]) >= 2
+            return has_key or has_two
+            
+        elif doc_type == "Voter_Id":
+            voter_keys = {"Voter ID", "Card Voter ID 1 Front", "Card Voter ID 1 Back", "Card Voter ID 2 Front", "Card Voter ID 2 Back"}
+            has_key = any(name in voter_keys and conf >= 0.6 for name, conf in detections)
+            has_two = len([conf for name, conf in detections if conf >= 0.5]) >= 2
+            return has_key or has_two
+            
+        elif doc_type == "Passport":
+            passport_keys = {"MRZ1", "MRZ2", "Code"}
+            has_key = any(name in passport_keys and conf >= 0.6 for name, conf in detections)
+            has_two = len([conf for name, conf in detections if conf >= 0.5]) >= 2
+            return has_key or has_two
+            
+        return len([conf for name, conf in detections if conf >= threshold]) >= 1
     except Exception as e:
         logger.error(f"Error in confirm_document_type for {doc_type}: {e}")
         return False
@@ -401,16 +454,27 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
     detected_type, detected_side = mapping[raw_class]
     norm_expected_type = normalize_document_type(expected_type)
     
-    # Fallback correction: If the classifier prediction does not match the expected type,
-    # run structural verification. If verified, override the type classification.
-    if norm_expected_type and detected_type != norm_expected_type:
-        logger.info(f"Type mismatch detected (classifier: {detected_type}, expected: {norm_expected_type}). Running structure confirmation...")
-        if confirm_document_type(image, norm_expected_type, threshold=0.5):
-            logger.info(f"Overriding classified type from {detected_type} to expected type {norm_expected_type}")
-            detected_type = norm_expected_type
+    # 1. First, check if it is actually an Aadhaar card (since classifier is prone to false positives on vertical Aadhaar)
+    is_aadhaar = is_aadhaar_card(image)
+    if is_aadhaar:
+        if detected_type != "Aadhaar":
+            logger.info(f"Overriding type from classifier ({detected_type}) to Aadhaar because Aadhaar structural fields were confidently detected.")
+            detected_type = "Aadhaar"
             detected_side = None
-            if detected_type in ["Pan_Card", "Passport"]:
-                detected_side = "front"
+            
+    # 2. General type mismatch override fallback
+    if norm_expected_type and detected_type != norm_expected_type:
+        # If the document is verified as Aadhaar, but they expect something else, do NOT allow overriding to the expected type!
+        if is_aadhaar:
+            logger.info(f"Document confirmed as Aadhaar, but expected type is {norm_expected_type}. Disallowing override.")
+        else:
+            logger.info(f"Type mismatch detected (classifier: {detected_type}, expected: {norm_expected_type}). Running structure confirmation...")
+            if confirm_document_type(image, norm_expected_type, threshold=0.5):
+                logger.info(f"Overriding classified type from {detected_type} to expected type {norm_expected_type}")
+                detected_type = norm_expected_type
+                detected_side = None
+                if detected_type in ["Pan_Card", "Passport"]:
+                    detected_side = "front"
     
     # Resolve Voter ID side if generic voter_id class is returned
     if detected_type == "Voter_Id" and detected_side is None:
