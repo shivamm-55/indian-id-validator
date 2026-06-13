@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 # Copy application code
 COPY . /code
 
-# Expose port 7860 (Hugging Face standard port)
+# Expose the application port
 EXPOSE 7860
 
 # Run FastAPI using uvicorn
