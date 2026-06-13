@@ -160,240 +160,116 @@ model-index:
 ---
 # Indian ID Validator
 
-[![Hugging Face Model](https://img.shields.io/badge/Hugging%20Face-Model-blue)](https://huggingface.co/logasanjeev/indian-id-validator)
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-black?logo=github)](https://github.com/shivamm-55/indian-id-validator)
 
-A robust computer vision pipeline for classifying, detecting, and extracting text from Indian identification documents, including Aadhaar, PAN Card, Passport, Voter ID, and Driving License. Powered by YOLO11 models and PaddleOCR, this project supports both front and back images for Aadhaar and Driving License.
+A robust computer vision and OCR pipeline for classifying, validating, and extracting data from Indian identification documents. Powered by **YOLO11** detection/classification models and **PaddleOCR**, this project supports **Aadhaar, PAN Card, Passport, Voter ID, and Driving License**.
 
-## Overview
+It includes a multi-step validation engine that verifies document type and side, performs layout-based side resolution fallbacks, and executes secure cross-side matching for dual-side uploads.
 
-The **Indian ID Validator** uses deep learning to:
-- **Classify** ID types (e.g., `aadhar_front`, `passport`) with the `Id_Classifier` model.
-- **Detect** specific fields (e.g., Aadhaar Number, DOB, Name) using type-specific YOLO11 detection models.
-- **Extract** text from detected fields via PaddleOCR with image preprocessing (upscaling, denoising, contrast enhancement).
+---
 
-**Supported ID Types**:
-- Aadhaar (front and back)
-- PAN Card (front)
-- Passport (front)
-- Voter ID (front and back)
-- Driving License (front and back)
+## Key Features
 
-## Models
+1. **Automatic Document Classification**: Identifies the document type and side (`aadhar_front`, `driving_license_back`, `passport`, etc.) using a custom `Id_Classifier` model.
+2. **Targeted Field Detection**: Localizes regions of interest (e.g. Aadhaar Number, DOB, Name, Address) using card-specific YOLO11 models.
+3. **Advanced Image Preprocessing**: Enhances cropped text regions (via upscaling, sharpening, denoising, and CLAHE contrast adjustments) to maximize OCR extraction accuracy.
+4. **Latency-Optimized Cross-Linking**: Runs OCR *only* on the specific unique identifier bounding box during dual-side validation, bringing CPU response times down from 50s to **under 5 seconds** (a 90% latency reduction).
+5. **Robust Document Side Fallback**: Intelligently resolves and corrects card side classification errors (for Voter ID and Driving Licenses) by detecting layout-specific fields (e.g., matching `Address` to the back cover).
+6. **Masked ID Validation**: Employs strict suffix-matching rules to securely verify masked Aadhaar front cards (e.g., verifying that the 4-digit front suffix matches the end of the full 12-digit back number).
+7. **REST API**: Packaged with a lightweight **FastAPI** web server to easily process and validate documents remotely.
 
-The pipeline consists of the following models, each designed for specific tasks in the ID validation process. Models can be downloaded from their respective Ultralytics Hub links in various formats such as PyTorch, ONNX, TensorRT, and more for deployment in different environments.
+---
 
-| Model Name       | Type        | Description                                                                                   | Link                                      |
-|------------------|-------------|-----------------------------------------------------------------------------------------------|-------------------------------------------|
-| Id_Classifier    | YOLO11l-cls | Classifies the type of Indian ID document (e.g., Aadhaar, Passport).                          | [Ultralytics Hub](https://hub.ultralytics.com/models/QnJjO78MxBaRVeX2wOO4) |
-| Aadhaar          | YOLO11l     | Detects fields on Aadhaar cards (front and back), such as Aadhaar Number, DOB, and Address.   | [Kaggle Notebook](https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar) |
-| Driving_License  | YOLO11l     | Detects fields on Driving Licenses (front and back), including DL No, DOB, and Vehicle Type.  | [Ultralytics Hub](https://hub.ultralytics.com/models/eaHzQ79umKwJkic9DXbm) |
-| Pan_Card         | YOLO11l     | Detects fields on PAN Cards, such as PAN Number, Name, and DOB.                               | [Ultralytics Hub](https://hub.ultralytics.com/models/Yj4aJ34fK02MkrHFSXq0) |
-| Passport         | YOLO11l     | Detects fields on Passports, including MRZ lines, DOB, and Nationality.                       | [Ultralytics Hub](https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z) |
-| Voter_Id         | YOLO11l     | Detects fields on Voter ID cards (front and back), such as Voter ID, Name, and Address.       | [Ultralytics Hub](https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp) |
+## Supported ID Types & Fields
 
-## Model Details
+| ID Type | Layouts | Bounding Box Classes Detected |
+|---|---|---|
+| **Aadhaar** | Front & Back | `Aadhaar` (Number), `DOB`, `Gender`, `Name`, `Address` |
+| **PAN Card** | Front | `PAN`, `Name`, `Father's Name`, `DOB`, `Pan Card` (whole card) |
+| **Driving License** | Front & Back | `Address`, `Blood Group`, `DL No`, `DOB`, `Name`, `Relation With`, `RTO`, `State`, `Vehicle Type` |
+| **Passport** | Details Page | `Address`, `Code`, `DOB`, `DOI`, `EXP`, `Gender`, `MRZ1`, `MRZ2`, `Name`, `Nationality`, `Nation`, `POI` |
+| **Voter ID** | Front & Back | `Address`, `Age`, `DOB`, `Date of Issue`, `Election`, `Father`, `Gender`, `Name`, `Portrait`, `Symbol`, `Voter ID` |
 
-Below is a detailed breakdown of each model, including the classes they detect and their evaluation metrics on a custom Indian ID dataset.
-
-| Model Name       | Task                | Classes                                                                                   | Metrics                                                                                   |
-|------------------|---------------------|-------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
-| **Id_Classifier**| Image Classification| `aadhar_back`, `aadhar_front`, `driving_license_back`, `driving_license_front`, `pan_card_front`, `passport`, `voter_id` | Accuracy (Top-1): 0.995, Accuracy (Top-5): 1.0                                           |
-| **Aadhaar**      | Object Detection    | `Aadhaar_Number`, `Aadhaar_DOB`, `Aadhaar_Gender`, `Aadhaar_Name`, `Aadhaar_Address`     | mAP50: 0.795, mAP50-95: 0.553, Precision: 0.777, Recall: 0.774, Fitness: 0.577          |
-| **Driving_License**| Object Detection  | `Address`, `Blood Group`, `DL No`, `DOB`, `Name`, `Relation With`, `RTO`, `State`, `Vehicle Type` | mAP50: 0.690, mAP50-95: 0.524, Precision: 0.752, Recall: 0.669                           |
-| **Pan_Card**     | Object Detection    | `PAN`, `Name`, `Father's Name`, `DOB`, `Pan Card`                                        | mAP50: 0.924, mAP50-95: 0.686, Precision: 0.902, Recall: 0.901                           |
-| **Passport**     | Object Detection    | `Address`, `Code`, `DOB`, `DOI`, `EXP`, `Gender`, `MRZ1`, `MRZ2`, `Name`, `Nationality`, `Nation`, `POI` | mAP50: 0.987, mAP50-95: 0.851, Precision: 0.972, Recall: 0.967                           |
-| **Voter_Id**     | Object Detection    | `Address`, `Age`, `DOB`, `Card Voter ID 1 Back`, `Card Voter ID 2 Front`, `Card Voter ID 2 Back`, `Card Voter ID 1 Front`, `Date of Issue`, `Election`, `Father`, `Gender`, `Name`, `Point`, `Portrait`, `Symbol`, `Voter ID` | mAP50: 0.917, mAP50-95: 0.772, Precision: 0.922, Recall: 0.873                           |
-
-For additional details, refer to the `model-index` section in the YAML metadata at the top of this README.
+---
 
 ## Installation
 
-1. **Clone the Repository**:
-   ```bash
-   git clone https://huggingface.co/logasanjeev/indian-id-validator
-   cd indian-id-validator
-   ```
+### 1. Clone the Repository
+```bash
+git clone https://github.com/shivamm-55/indian-id-validator
+cd indian-id-validator
+```
 
-2. **Install Dependencies**:
-   Ensure Python 3.8+ is installed, then run:
-   ```bash
-   pip install -r requirements.txt
-   ```
-   The `requirements.txt` includes `ultralytics`, `paddleocr`, `paddlepaddle`, `numpy==1.24.4`, `pandas==2.2.2`, and others.
+### 2. Install Dependencies
+Ensure Python 3.8+ is installed, then run:
+```bash
+pip install -r requirements.txt
+pip install fastapi uvicorn python-multipart
+```
 
-3. **Download Models**:
-   Models are downloaded automatically via `inference.py` from the Hugging Face repository. Ensure `config.json` is in the root directory. Alternatively, use the Ultralytics Hub links above to download models in formats like PyTorch, ONNX, etc.
+### 3. Model Downloads
+Models are downloaded automatically from Hugging Face Hub during script execution. If you have Git LFS placeholder files (133 bytes), the code automatically detects and overwrites them with the full weights.
+
+---
 
 ## Usage
 
-### Python API
-
-#### Classification Only
-Use `Id_Classifier` to identify the ID type:
-```python
-from ultralytics import YOLO
-import cv2
-
-# Load model
-model = YOLO("models/Id_Classifier.pt")
-
-# Load image
-image = cv2.imread("samples/aadhaar_front.jpg")
-
-# Classify
-results = model(image)
-
-# Print predicted class and confidence
-for result in results:
-    predicted_class = result.names[result.probs.top1]
-    confidence = result.probs.top1conf.item()
-    print(f"Predicted Class: {predicted_class}, Confidence: {confidence:.2f}")
-```
-**Output**:
-```
-Predicted Class: aadhar_front, Confidence: 1.00
-```
-
-#### End-to-End Processing
-Use `inference.py` for classification, detection, and OCR:
-```python
-from inference import process_id
-
-# Process an Aadhaar back image
-result = process_id(
-    image_path="samples/aadhaar_back.jpg",
-    save_json=True,
-    output_json="detected_aadhaar_back.json",
-    verbose=True
-)
-
-# Print results
-import json
-print(json.dumps(result, indent=2))
-```
-**Output**:
-```json
-{
-  "Aadhaar": "996269466937",
-  "Address": "S/O Gocala Shinde Jay Bnavani Rahiwasi Seva Sangh ..."
-}
-```
-
-#### Processing a Passport with Visualizations
-Process a passport image to classify, detect fields, and extract text, with visualizations enabled:
-```python
-from inference import process_id
-
-# Process a passport image with verbose output
-result = process_id(
-    image_path="samples/passport_front.jpg",
-    save_json=True,
-    output_json="detected_passport.json",
-    verbose=True
-)
-
-# Print results
-import json
-print("\nPassport Results:")
-print(json.dumps(result, indent=4))
-```
-
-**Visualizations**:
-The `verbose=True` flag generates visualizations for the raw image, bounding boxes, and each detected field with extracted text. Below are the results for `passport_front.jpg`:
-
-| **Type**                     | **Image**                                                                                     |
-|------------------------------|-----------------------------------------------------------------------------------------------|
-| **Raw Image**                | ![Raw Image](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture1.jpeg) |
-| **Output with Bounding Boxes** | ![Output with Bounding Boxes](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture2.jpeg) |
-
-**Detected Fields**:
-
-| **Field**      | **Image**                                                                                     |
-|----------------|-----------------------------------------------------------------------------------------------|
-| **Address**    | ![Address](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture9.png) |
-| **Code**       | ![Code](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture7.png) |
-| **DOB**        | ![DOB](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture4.png) |
-| **DOI**        | ![DOI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture6.png) |
-| **EXP**        | ![EXP](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture8.png) |
-| **Gender**     | ![Gender](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture12.png) |
-| **MRZ1**       | ![MRZ1](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture13.png) |
-| **MRZ2**       | ![MRZ2](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture14.png) |
-| **Name**       | ![Name](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture10.png) |
-| **Nationality**| ![Nationality](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture11.png) |
-| **Nation**     | ![Nation](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture3.png) |
-| **POI**        | ![POI](https://huggingface.co/logasanjeev/indian-id-validator/raw/main/results/Picture5.png) |
-
-**Output**:
-```
-Passport Results:
-{
-    "Nation": "INDIAN",
-    "DOB": "26/08/1996",
-    "POI": "AMRITSAR",
-    "DOI": "18/06/2015",
-    "Code": "NO461879",
-    "EXP": "17/06/2025",
-    "Address": "SHER SINGH WALAFARIDKOTASPUNJAB",
-    "Name": "SHAMINDERKAUR",
-    "Nationality": "IND",
-    "Gender": "F",
-    "MRZ1": "P<INDSANDHU<<SHAMINDER<KAUR<<<<<<<<<<<<<<<<<",
-    "MRZ2": "NO461879<4IND9608269F2506171<<<<<<<<<<<<<<<2"
-}
-```
-
-### Terminal
-Run `inference.py` via the command line:
+### 1. FastAPI REST API (Recommended)
+You can start the FastAPI web service to receive validations over HTTP:
 ```bash
-python inference.py samples/aadhaar_front.jpg --verbose --output-json detected_aadhaar.json
+python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```
-**Options**:
-- `--model`: Specify model (e.g., `Aadhaar`, `Passport`). Default: auto-detect.
-- `--no-save-json`: Disable JSON output.
-- `--verbose`: Show visualizations.
-- `--classify-only`: Only classify ID type.
 
-**Example Output**:
+#### Test curl Command (Dual-Side Aadhaar Validation)
+```bash
+curl -X POST \
+  -F "front_image=@samples/aadhaar_front.jpg" \
+  -F "back_image=@samples/aadhaar_back.jpg" \
+  -F "expected_type=Aadhaar" \
+  http://127.0.0.1:8000/validate
 ```
-Detected document type: aadhar_front with confidence: 0.98
-Extracted Text:
-{
-  "Aadhaar": "1234 5678 9012",
-  "DOB": "01/01/1990",
-  "Gender": "M",
-  "Name": "John Doe",
-  "Address": "123 Main St, City, State"
-}
+
+---
+
+### 2. Python API
+Integrate the validation engine directly into your code:
+
+```python
+from validation import validate_document
+
+# Validate dual-side uploads
+report = validate_document(
+    front_image_path="samples/aadhaar_front.jpg",
+    back_image_path="samples/aadhaar_back.jpg",
+    expected_type="Aadhaar",
+    confidence_threshold=0.75
+)
+
+print(report["is_valid"])  # Returns True/False
+print(report["status"])    # Returns "success" or "mismatch"
 ```
+
+---
+
+### 3. CLI Interface
+
+#### Full End-to-End Extraction:
+```bash
+python inference.py samples/aadhaar_front.jpg --verbose --output-json output.json
+```
+
+#### Document Validation CLI:
+```bash
+python validation.py --front samples/aadhaar_front.jpg --back samples/aadhaar_back.jpg --expected-type Aadhaar
+```
+
+---
 
 ## Colab Tutorial
-
-Try the interactive tutorial to test the model with sample images or your own:
+Try out the interactive tutorial notebook to test the pipeline online:
 [Open in Colab](https://colab.research.google.com/drive/1_hIvuJ9p1kx8wKTG1ThK9vV8ijiNTlPX)
 
-## Links
-
-- **Repository**: [Hugging Face](https://huggingface.co/logasanjeev/indian-id-validator)
-- **Models**:
-  - Id_Classifier: [Ultralytics](https://hub.ultralytics.com/models/QnJjO78MxBaRVeX2wOO4)
-  - Aadhaar: [Kaggle](https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar)
-  - Pan_Card: [Ultralytics](https://hub.ultralytics.com/models/Yj4aJ34fK02MkrHFSXq0)
-  - Passport: [Ultralytics](https://hub.ultralytics.com/models/ELaiHGZ0bbr4JwsvSZ7z)
-  - Voter_Id: [Ultralytics](https://hub.ultralytics.com/models/jAz7y1UQAfr2oBlwLGDp)
-  - Driving_License: [Ultralytics](https://hub.ultralytics.com/models/eaHzQ79umKwJkic9DXbm)
-- **Tutorial**: [Colab Notebook](https://colab.research.google.com/drive/1_hIvuJ9p1kx8wKTG1ThK9vV8ijiNTlPX)
-- **Inference Script**: [inference.py](https://huggingface.co/logasanjeev/indian-id-validator/blob/main/inference.py)
-- **Config**: [config.json](https://huggingface.co/logasanjeev/indian-id-validator/blob/main/config.json)
-
-## Contributing
-
-Contributions are welcome! To contribute:
-1. Fork the repository.
-2. Create a branch: `git checkout -b feature-name`.
-3. Submit a pull request with your changes.
-
-Report issues or suggest features via the [Hugging Face Issues](https://huggingface.co/logasanjeev/indian-id-validator/discussions) page.
+---
 
 ## License
-
 MIT License
