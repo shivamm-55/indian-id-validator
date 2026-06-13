@@ -6,11 +6,14 @@ from ultralytics import YOLO
 from huggingface_hub import hf_hub_download
 
 # Import required components from the main pipeline
-from inference import CONFIG, process_id
+from inference import CONFIG, process_id, load_yolo_model
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+import torch
+DEVICE = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
 
 def normalize_document_type(expected_type):
     """
@@ -38,15 +41,7 @@ def normalize_document_type(expected_type):
     }
     return mapping.get(clean, expected_type)
 
-def load_yolo_model(model_key):
-    """Loads a YOLO model based on the key in config.json, downloading it if not present."""
-    if model_key not in CONFIG["models"]:
-        raise ValueError(f"Model key '{model_key}' not found in configuration.")
-    model_path = CONFIG["models"][model_key]["path"]
-    if not os.path.exists(model_path) or os.path.getsize(model_path) < 1000:
-        logger.info(f"Model {model_key} not found or is placeholder at {model_path}. Downloading from Hugging Face Hub...")
-        model_path = hf_hub_download(repo_id="logasanjeev/indian-id-validator", filename=model_path)
-    return YOLO(model_path)
+# Replaced local load_yolo_model with import from inference.py for caching
 
 def determine_voter_id_side(image_path):
     """
@@ -56,7 +51,7 @@ def determine_voter_id_side(image_path):
     """
     try:
         voter_model = load_yolo_model("Voter_Id")
-        results = voter_model(image_path)
+        results = voter_model(image_path, device=DEVICE)
         
         front_score = 0.0
         back_score = 0.0
@@ -92,6 +87,52 @@ def determine_voter_id_side(image_path):
     
     return None
 
+def determine_aadhaar_side(image_path):
+    """
+    Determines whether an Aadhaar image contains the front or back side by checking detected fields.
+    For vertical e-Aadhaar letters (which contain both address and portrait), if front-specific
+    fields (Name, DOB, Gender) are present, it resolves to "front".
+    """
+    try:
+        aadhaar_model = load_yolo_model("Aadhaar")
+        results = aadhaar_model(image_path, device=DEVICE)
+        
+        front_score = 0.0
+        back_score = 0.0
+        
+        # Front indicators: Name, DOB, Gender
+        # Back indicators: Address
+        front_classes = {"Name", "DOB", "Gender"}
+        back_classes = {"Address"}
+        
+        class_names = CONFIG["models"]["Aadhaar"]["classes"]
+        
+        for result in results:
+            if not result.boxes:
+                continue
+            for box in result.boxes:
+                cls_idx = int(box.cls[0].item())
+                conf = box.conf[0].item()
+                if cls_idx < len(class_names):
+                    class_name = class_names[cls_idx]
+                    if class_name in front_classes:
+                        front_score += conf
+                    elif class_name in back_classes:
+                        back_score += conf
+        
+        logger.info(f"Aadhaar side determination scores -> Front: {front_score:.2f}, Back: {back_score:.2f}")
+        
+        # If front-specific fields are present, resolve to front (even if address is also present,
+        # since a front side is contained in the image)
+        if front_score > 0.5:
+            return "front"
+        elif back_score > 0.5:
+            return "back"
+    except Exception as e:
+        logger.error(f"Error determining Aadhaar side: {e}")
+    
+    return None
+
 def determine_driving_license_side(image_path):
     """
     Determines whether a Driving License image is the front or back side by checking detected fields.
@@ -99,7 +140,7 @@ def determine_driving_license_side(image_path):
     """
     try:
         dl_model = load_yolo_model("Driving_License")
-        results = dl_model(image_path)
+        results = dl_model(image_path, device=DEVICE)
         
         front_score = 0.0
         back_score = 0.0
@@ -136,6 +177,34 @@ def determine_driving_license_side(image_path):
     
     return None
 
+def confirm_document_type(image, doc_type, threshold=0.5):
+    """
+    Validates if the image contains features of the expected document type.
+    Serves as a fallback correction when the classifier misclassifies the document.
+    """
+    try:
+        model = load_yolo_model(doc_type)
+        results = model(image, device=DEVICE)
+        
+        class_names = CONFIG["models"][doc_type]["classes"]
+        
+        detected_count = 0
+        for result in results:
+            if not result.boxes:
+                continue
+            for box in result.boxes:
+                cls_idx = int(box.cls[0].item())
+                conf = box.conf[0].item()
+                if cls_idx < len(class_names):
+                    if conf >= threshold:
+                        detected_count += 1
+                        
+        logger.info(f"confirm_document_type for '{doc_type}': detected {detected_count} structural fields.")
+        return detected_count >= 1
+    except Exception as e:
+        logger.error(f"Error in confirm_document_type for {doc_type}: {e}")
+        return False
+
 def extract_linking_identifier(image_path, doc_type):
     """
     Optimized function to extract ONLY the unique ID number field,
@@ -168,7 +237,7 @@ def extract_linking_identifier(image_path, doc_type):
         h, w, _ = image.shape
         
         # 4. Run detection
-        results = model(image_path)
+        results = model(image_path, device=DEVICE)
         
         # Find the highest confidence box for target classes
         best_box = None
@@ -205,20 +274,12 @@ def extract_linking_identifier(image_path, doc_type):
             
         # 6. Preprocess ONLY this crop
         region_img = preprocess_image(region_img)
-        region_h, region_w = region_img.shape[:2]
         
-        # Center in a black canvas to aid OCR (as in inference.py)
-        black_canvas = np.ones((h, w, 3), dtype=np.uint8)
-        center_x, center_y = w // 2, h // 2
-        top_left_x = max(0, min(w - region_w, center_x - region_w // 2))
-        top_left_y = max(0, min(h - region_h, center_y - region_h // 2))
-        region_w = min(region_w, w - top_left_x)
-        region_h = min(region_h, h - top_left_y)
-        region_img = cv2.resize(region_img, (region_w, region_h))
-        black_canvas[top_left_y:top_left_y+region_h, top_left_x:top_left_x+region_w] = region_img
+        # Pad the crop (e.g. 15px white border) to aid OCR (10x faster than original giant black canvas)
+        padded_img = cv2.copyMakeBorder(region_img, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
         
         # 7. Run OCR
-        ocr_result = OCR.ocr(black_canvas)
+        ocr_result = OCR.ocr(padded_img)
         if not ocr_result:
             return None
             
@@ -280,7 +341,7 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             }
             
         # Classify the ID type
-        results = classifier(image)
+        results = classifier(image, device=DEVICE)
         if not results or results[0].probs is None:
             return {
                 "is_valid": False,
@@ -338,6 +399,18 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
         }
         
     detected_type, detected_side = mapping[raw_class]
+    norm_expected_type = normalize_document_type(expected_type)
+    
+    # Fallback correction: If the classifier prediction does not match the expected type,
+    # run structural verification. If verified, override the type classification.
+    if norm_expected_type and detected_type != norm_expected_type:
+        logger.info(f"Type mismatch detected (classifier: {detected_type}, expected: {norm_expected_type}). Running structure confirmation...")
+        if confirm_document_type(image, norm_expected_type, threshold=0.5):
+            logger.info(f"Overriding classified type from {detected_type} to expected type {norm_expected_type}")
+            detected_type = norm_expected_type
+            detected_side = None
+            if detected_type in ["Pan_Card", "Passport"]:
+                detected_side = "front"
     
     # Resolve Voter ID side if generic voter_id class is returned
     if detected_type == "Voter_Id" and detected_side is None:
@@ -357,6 +430,13 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
         resolved_side = determine_driving_license_side(image_path)
         if resolved_side:
             logger.info(f"Overriding DL side from classifier ({detected_side}) to resolved side ({resolved_side})")
+            detected_side = resolved_side
+            
+    # Resolve/Correct Aadhaar side (e.g. for vertical Aadhaar letters containing both sides)
+    if detected_type == "Aadhaar":
+        resolved_side = determine_aadhaar_side(image_path)
+        if resolved_side:
+            logger.info(f"Overriding Aadhaar side from classifier ({detected_side}) to resolved side ({resolved_side})")
             detected_side = resolved_side
             
     # Normalize expected type for comparison

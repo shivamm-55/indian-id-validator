@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import JSONResponse
 from validation import validate_document
+from inference import process_id
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +16,28 @@ app = FastAPI(
     description="A FastAPI service for validating Indian ID documents (Aadhaar, PAN, DL, Passport, Voter ID).",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Preloading and warming up YOLO and PaddleOCR models...")
+    from inference import load_yolo_model, OCR
+    import numpy as np
+    
+    # Warm up YOLO models
+    for model_key in ["Id_Classifier", "Aadhaar", "Pan_Card", "Passport", "Voter_Id", "Driving_License"]:
+        try:
+            load_yolo_model(model_key)
+            logger.info(f"Loaded and warmed up YOLO model: {model_key}")
+        except Exception as e:
+            logger.error(f"Error preloading YOLO model {model_key}: {e}")
+            
+    # Warm up PaddleOCR
+    try:
+        dummy = np.ones((100, 100, 3), dtype=np.uint8)
+        OCR.ocr(dummy)
+        logger.info("PaddleOCR engine loaded and warmed up.")
+    except Exception as e:
+        logger.error(f"Error warming up PaddleOCR: {e}")
 
 def save_upload_to_temp(upload_file: UploadFile) -> str:
     """Saves an uploaded file to a temporary file and returns its path."""
@@ -97,6 +120,40 @@ async def api_validate_document(
                 logger.info(f"Cleaned up temp back file: {back_temp_path}")
             except Exception as ex:
                 logger.error(f"Failed to remove temp file {back_temp_path}: {ex}")
+
+@app.post("/ocr", tags=["OCR Only"])
+async def api_ocr_document(
+    image: UploadFile = File(...),
+    model_name: str = Form(None)
+):
+    """
+    Performs OCR field extraction on the uploaded document.
+    Automatically classifies the document type if model_name is not provided.
+    Returns raw extracted key-value pairs.
+    """
+    temp_path = None
+    try:
+        logger.info(f"Received image for raw OCR: {image.filename}")
+        temp_path = save_upload_to_temp(image)
+        
+        # Run inference.py's process_id function
+        extracted_data = process_id(
+            image_path=temp_path,
+            model_name=model_name,
+            save_json=False,
+            verbose=False
+        )
+        return extracted_data
+    except Exception as e:
+        logger.error(f"Uncaught OCR error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal OCR error: {str(e)}")
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+                logger.info(f"Cleaned up temp OCR file: {temp_path}")
+            except Exception as ex:
+                logger.error(f"Failed to remove temp file {temp_path}: {ex}")
 
 if __name__ == "__main__":
     import uvicorn
