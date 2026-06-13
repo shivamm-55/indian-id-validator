@@ -30,7 +30,7 @@ def normalize_document_type(expected_type):
     mapping = {
         "aadhaar": "Aadhaar",
         "aadhar": "Aadhaar",
-        "pancard": "Pan_Card",
+        "pan": "Pan_Card",
         "passport": "Passport",
         "voterid": "Voter_Id",
         "votercard": "Voter_Id",
