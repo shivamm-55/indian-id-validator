@@ -43,15 +43,30 @@ def normalize_document_type(expected_type):
 
 # Replaced local load_yolo_model with import from inference.py for caching
 
-def determine_voter_id_side(image_path):
+def determine_voter_id_side(image_path, cache=None):
     """
     Determines whether a Voter ID image is the front or back side.
     Since the Id_Classifier outputs a generic 'voter_id' class, this function
     uses the custom Voter_Id detection model to inspect detected features.
     """
     try:
-        voter_model = load_yolo_model("Voter_Id")
-        results = voter_model(image_path, device=DEVICE)
+        if cache is not None and (image_path, "voter_side") in cache["misc"]:
+            return cache["misc"][(image_path, "voter_side")]
+            
+        results = None
+        key_det = (image_path, "Voter_Id")
+        if cache is not None:
+            results = cache["detections"].get(key_det)
+            
+        if results is None:
+            voter_model = load_yolo_model("Voter_Id")
+            # If the image numpy array is already cached, run on it to avoid loading from disk again
+            if cache is not None and image_path in cache["images"]:
+                results = voter_model(cache["images"][image_path], device=DEVICE)
+            else:
+                results = voter_model(image_path, device=DEVICE)
+            if cache is not None:
+                cache["detections"][key_det] = results
         
         front_score = 0.0
         back_score = 0.0
@@ -77,25 +92,43 @@ def determine_voter_id_side(image_path):
         
         logger.info(f"Voter ID side determination scores -> Front: {front_score:.2f}, Back: {back_score:.2f}")
         
-        # If score is too low or equal, we return None (unable to determine side confidently)
+        resolved_side = None
         if front_score > back_score and front_score > 0.3:
-            return "front"
+            resolved_side = "front"
         elif back_score > front_score and back_score > 0.3:
-            return "back"
+            resolved_side = "back"
+            
+        if cache is not None:
+            cache["misc"][(image_path, "voter_side")] = resolved_side
+        return resolved_side
     except Exception as e:
         logger.error(f"Error determining Voter ID side: {e}")
     
     return None
 
-def determine_aadhaar_side(image_path):
+def determine_aadhaar_side(image_path, cache=None):
     """
     Determines whether an Aadhaar image contains the front or back side by checking detected fields.
     For vertical e-Aadhaar letters (which contain both address and portrait), if front-specific
     fields (Name, DOB, Gender) are present, it resolves to "front".
     """
     try:
-        aadhaar_model = load_yolo_model("Aadhaar")
-        results = aadhaar_model(image_path, device=DEVICE)
+        if cache is not None and (image_path, "aadhaar_side") in cache["misc"]:
+            return cache["misc"][(image_path, "aadhaar_side")]
+            
+        results = None
+        key_det = (image_path, "Aadhaar")
+        if cache is not None:
+            results = cache["detections"].get(key_det)
+            
+        if results is None:
+            aadhaar_model = load_yolo_model("Aadhaar")
+            if cache is not None and image_path in cache["images"]:
+                results = aadhaar_model(cache["images"][image_path], device=DEVICE)
+            else:
+                results = aadhaar_model(image_path, device=DEVICE)
+            if cache is not None:
+                cache["detections"][key_det] = results
         
         front_score = 0.0
         back_score = 0.0
@@ -122,12 +155,15 @@ def determine_aadhaar_side(image_path):
         
         logger.info(f"Aadhaar side determination scores -> Front: {front_score:.2f}, Back: {back_score:.2f}")
         
-        # If front-specific fields are present, resolve to front (even if address is also present,
-        # since a front side is contained in the image)
+        resolved_side = None
         if front_score > 0.5:
-            return "front"
+            resolved_side = "front"
         elif back_score > 0.5:
-            return "back"
+            resolved_side = "back"
+            
+        if cache is not None:
+            cache["misc"][(image_path, "aadhaar_side")] = resolved_side
+        return resolved_side
     except Exception as e:
         logger.error(f"Error determining Aadhaar side: {e}")
     
@@ -150,70 +186,48 @@ def is_valid_aadhaar_number(text):
         # Full Aadhaar number: exactly 12 digits
         return len(clean) == 12
 
-def determine_driving_license_side(image_path):
+def determine_driving_license_side(image_path, cache=None):
     """
     Determines whether a Driving License image is the front or back side.
-    Uses a fast OCR keyword check (on a downscaled version of the image)
-    which is extremely robust compared to bounding box class heuristics.
+    First checks YOLO detections for highly confident front-only features (DOB, Name).
+    If ambiguous, falls back to a fast OCR keyword check on a downscaled version (320px).
     """
     try:
-        from inference import OCR
-        import cv2
-        
-        img = cv2.imread(image_path)
-        if img is None:
-            return None
-            
-        # Downscale to max width 512 for sub-200ms OCR execution
-        h, w = img.shape[:2]
-        if w > 512:
-            scale = 512 / w
-            img = cv2.resize(img, (512, int(h * scale)))
-            
-        padded = cv2.copyMakeBorder(img, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-        ocr_res = OCR.ocr(padded)
-        
-        text_list = []
-        if ocr_res:
-            for item in ocr_res:
-                if isinstance(item, dict):
-                    text_list.extend(item.get("rec_texts", []))
-                elif isinstance(item, list):
-                    for word in item:
-                        if isinstance(word, list) and len(word) >= 2:
-                            text_list.append(word[1][0])
-                            
-        full_text = " ".join(text_list).lower()
-        logger.info(f"DL side OCR text: {full_text}")
-        
-        back_keywords = ["address", "signature", "holder", "endorsement", "sign", "authority"]
-        front_keywords = ["dob", "father", "blood", "licence", "license", "validity"]
-        
-        back_matches = sum(1 for kw in back_keywords if kw in full_text)
-        front_matches = sum(1 for kw in front_keywords if kw in full_text)
-        
-        if "address" in full_text:
-            return "back"
-            
-        if back_matches > front_matches:
-            return "back"
-        elif front_matches > back_matches:
-            return "front"
-            
-    except Exception as e:
-        logger.error(f"Error in OCR DL side resolution: {e}")
-        
-    # Fallback to YOLO model heuristic if OCR fails
+        if cache is not None and (image_path, "dl_side") in cache["misc"]:
+            return cache["misc"][(image_path, "dl_side")]
+    except Exception:
+        pass
+
+    resolved_side = None
+    front_score = 0.0
+    back_score = 0.0
+
+    # 1. Run YOLO check first
     try:
-        dl_model = load_yolo_model("Driving_License")
-        results = dl_model(image_path, device=DEVICE)
-        
-        front_score = 0.0
-        back_score = 0.0
-        
+        results = None
+        key_det = (image_path, "Driving_License")
+        if cache is not None:
+            results = cache["detections"].get(key_det)
+            
+        if results is None:
+            dl_model = load_yolo_model("Driving_License")
+            img = None
+            if cache is not None:
+                img = cache["images"].get(image_path)
+            if img is None:
+                img = cv2.imread(image_path)
+                if cache is not None and img is not None:
+                    cache["images"][image_path] = img
+            if img is not None:
+                results = dl_model(img, device=DEVICE)
+            else:
+                results = dl_model(image_path, device=DEVICE)
+            if cache is not None:
+                cache["detections"][key_det] = results
+                
+        has_confident_front_field = False
         front_classes = {"DL No", "Name", "DOB", "Relation With", "Blood Group"}
         back_classes = {"Address", "Vehicle Type", "RTO", "State"}
-        
         class_names = CONFIG["models"]["Driving_License"]["classes"]
         
         for result in results:
@@ -226,26 +240,174 @@ def determine_driving_license_side(image_path):
                     class_name = class_names[cls_idx]
                     if class_name in front_classes:
                         front_score += conf
+                        if class_name in ["DOB", "Name"] and conf >= 0.5:
+                            has_confident_front_field = True
                     elif class_name in back_classes:
                         back_score += conf
-                        
-        if front_score > back_score and front_score > 0.3:
-            return "front"
-        elif back_score > front_score and back_score > 0.3:
-            return "back"
-    except Exception as e:
-        logger.error(f"Error determining Driving License side: {e}")
-    
-    return None
 
-def is_aadhaar_card(image):
+        # If we confidently detect Name/DOB and front score is dominant, shortcut to front
+        if has_confident_front_field and front_score > back_score:
+            resolved_side = "front"
+            logger.info("DL side resolved to 'front' via YOLO Name/DOB shortcut.")
+            
+    except Exception as e:
+        logger.error(f"Error in YOLO side check for Driving License: {e}")
+
+    # 2. Fallback to fast OCR check if YOLO check is ambiguous/indicates back-side
+    if resolved_side is None:
+        # 2a. Try fast Tesseract OCR keyword check first
+        try:
+            import pytesseract
+            import shutil
+            import os
+            
+            tesseract_cmd = shutil.which("tesseract")
+            if not tesseract_cmd:
+                if os.path.exists("/opt/homebrew/bin/tesseract"):
+                    tesseract_cmd = "/opt/homebrew/bin/tesseract"
+                elif os.path.exists("/usr/local/bin/tesseract"):
+                    tesseract_cmd = "/usr/local/bin/tesseract"
+                    
+            if tesseract_cmd:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+                
+                img = None
+                if cache is not None:
+                    img = cache["images"].get(image_path)
+                if img is None:
+                    img = cv2.imread(image_path)
+                    if cache is not None and img is not None:
+                        cache["images"][image_path] = img
+                        
+                if img is not None:
+                    h, w = img.shape[:2]
+                    w_target = 512
+                    if w > w_target:
+                        scale = w_target / w
+                        img_resized = cv2.resize(img, (w_target, int(h * scale)))
+                    else:
+                        img_resized = img
+                        
+                    # Preprocess for Tesseract: Convert to grayscale and apply adaptive thresholding
+                    gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+                    adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+                    
+                    tess_text = pytesseract.image_to_string(adaptive).lower()
+                    logger.info(f"DL side Tesseract text (512px): {tess_text.strip()[:100]}...")
+                    
+                    back_keywords = ["address", "signature", "holder", "endorsement", "sign", "authority"]
+                    front_keywords = ["dob", "father", "blood", "licence", "license", "validity"]
+                    
+                    back_matches = sum(1 for kw in back_keywords if kw in tess_text)
+                    front_matches = sum(1 for kw in front_keywords if kw in tess_text)
+                    
+                    if "address" in tess_text or back_matches > front_matches:
+                        resolved_side = "back"
+                    elif front_matches > back_matches:
+                        resolved_side = "front"
+                        
+                    if resolved_side:
+                        logger.info(f"DL side resolved to '{resolved_side}' via fast Tesseract OCR keyword check.")
+        except Exception as e:
+            logger.warning(f"Fast Tesseract DL side check skipped/failed: {e}")
+
+        # 2b. Fallback to slow PaddleOCR check if Tesseract is not installed or failed to resolve
+        if resolved_side is None:
+            try:
+                from inference import OCR
+                
+                img = None
+                if cache is not None:
+                    img = cache["images"].get(image_path)
+                if img is None:
+                    img = cv2.imread(image_path)
+                    if cache is not None and img is not None:
+                        cache["images"][image_path] = img
+                        
+                if img is not None:
+                    # Downscale to max width 320 for sub-100ms OCR execution
+                    h, w = img.shape[:2]
+                    w_target = 320
+                    if w > w_target:
+                        scale = w_target / w
+                        img_resized = cv2.resize(img, (w_target, int(h * scale)))
+                    else:
+                        img_resized = img
+                        
+                    padded = cv2.copyMakeBorder(img_resized, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                    
+                    ocr_res = None
+                    if cache is not None and (image_path, "full_ocr") in cache["misc"]:
+                        ocr_res = cache["misc"][(image_path, "full_ocr")]
+                        
+                    if ocr_res is None:
+                        ocr_res = OCR.ocr(padded)
+                        if cache is not None:
+                            cache["misc"][(image_path, "full_ocr")] = ocr_res
+                    
+                    text_list = []
+                    if ocr_res:
+                        for item in ocr_res:
+                            if isinstance(item, dict):
+                                text_list.extend(item.get("rec_texts", []))
+                            elif isinstance(item, list):
+                                for word in item:
+                                    if isinstance(word, list) and len(word) >= 2:
+                                        text_list.append(word[1][0])
+                                        
+                    full_text = " ".join(text_list).lower()
+                    logger.info(f"DL side OCR text (320px): {full_text}")
+                    
+                    back_keywords = ["address", "signature", "holder", "endorsement", "sign", "authority"]
+                    front_keywords = ["dob", "father", "blood", "licence", "license", "validity"]
+                    
+                    back_matches = sum(1 for kw in back_keywords if kw in full_text)
+                    front_matches = sum(1 for kw in front_keywords if kw in full_text)
+                    
+                    if "address" in full_text:
+                        resolved_side = "back"
+                    elif back_matches > front_matches:
+                        resolved_side = "back"
+                    elif front_matches > back_matches:
+                        resolved_side = "front"
+            except Exception as e:
+                logger.error(f"Error in OCR DL side resolution: {e}")
+
+    # 3. Final fallback to YOLO relative scores
+    if resolved_side is None:
+        try:
+            if front_score > back_score and front_score > 0.3:
+                resolved_side = "front"
+            elif back_score > front_score and back_score > 0.3:
+                resolved_side = "back"
+        except Exception:
+            pass
+
+    if resolved_side is not None and cache is not None:
+        cache["misc"][(image_path, "dl_side")] = resolved_side
+    return resolved_side
+
+def is_aadhaar_card(image, image_path=None, cache=None, threshold=0.7):
     """
     Checks if the image contains structural features that uniquely identify an Aadhaar card.
     Useful for overriding classification errors where Aadhaar cards are misclassified as Voter ID.
     """
     try:
-        model = load_yolo_model("Aadhaar")
-        results = model(image, device=DEVICE)
+        cache_key = (image_path if image_path else id(image), "is_aadhaar")
+        if cache is not None and cache_key in cache["misc"]:
+            return cache["misc"][cache_key]
+            
+        results = None
+        key_det = (image_path if image_path else id(image), "Aadhaar")
+        if cache is not None:
+            results = cache["detections"].get(key_det)
+            
+        if results is None:
+            model = load_yolo_model("Aadhaar")
+            results = model(image, device=DEVICE)
+            if cache is not None:
+                cache["detections"][key_det] = results
+                
         class_names = CONFIG["models"]["Aadhaar"]["classes"]
         for r in results:
             if not r.boxes:
@@ -256,44 +418,75 @@ def is_aadhaar_card(image):
                 if cls_idx < len(class_names):
                     name = class_names[cls_idx]
                     # ONLY trust the Aadhaar number field, which is unique to Aadhaar layouts
-                    if name == "Aadhaar" and conf >= 0.7:
+                    if name == "Aadhaar" and conf >= threshold:
                         # Verify the format of the detected Aadhaar number to prevent false positives on DL
                         h, w, _ = image.shape
-                        x_min, y_min, x_max, y_max = map(int, box.xyxy[0].tolist())
-                        x_min, y_min = max(0, x_min), max(0, y_min)
-                        x_max, y_max = min(w, x_max), min(h, y_max)
-                        region = image[y_min:y_max, x_min:x_max]
-                        if region.size == 0:
-                            continue
+                        box_coords = tuple(map(int, box.xyxy[0].tolist()))
+                        ocr_key = (image_path if image_path else id(image), box_coords)
+                        
+                        text = None
+                        if cache is not None:
+                            text = cache["ocr_crops"].get(ocr_key)
                             
-                        padded = cv2.copyMakeBorder(region, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-                        from inference import OCR
-                        ocr_res = OCR.ocr(padded)
-                        if ocr_res:
-                            text_list = []
-                            for item in ocr_res:
-                                if isinstance(item, dict):
-                                    text_list.extend(item.get("rec_texts", []))
-                                elif isinstance(item, list):
-                                    for word in item:
-                                        if isinstance(word, list) and len(word) >= 2:
-                                            text_list.append(word[1][0])
-                            text = "".join(text_list).strip()
-                            if is_valid_aadhaar_number(text):
-                                logger.info(f"Confirmed as actual Aadhaar card (Aadhaar No format matches: '{text}')")
-                                return True
+                        if text is None:
+                            x_min, y_min, x_max, y_max = box_coords
+                            x_min, y_min = max(0, x_min), max(0, y_min)
+                            x_max, y_max = min(w, x_max), min(h, y_max)
+                            region = image[y_min:y_max, x_min:x_max]
+                            if region.size == 0:
+                                continue
+                                
+                            padded = cv2.copyMakeBorder(region, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                            from inference import OCR
+                            ocr_res = OCR.ocr(padded)
+                            if ocr_res:
+                                text_list = []
+                                for item in ocr_res:
+                                    if isinstance(item, dict):
+                                        text_list.extend(item.get("rec_texts", []))
+                                    elif isinstance(item, list):
+                                        for word in item:
+                                            if isinstance(word, list) and len(word) >= 2:
+                                                text_list.append(word[1][0])
+                                text = "".join(text_list).strip()
+                            else:
+                                text = ""
+                            if cache is not None:
+                                cache["ocr_crops"][ocr_key] = text
+                                
+                        if is_valid_aadhaar_number(text):
+                            logger.info(f"Confirmed as actual Aadhaar card (Aadhaar No format matches: '{text}')")
+                            if cache is not None:
+                                cache["misc"][cache_key] = True
+                            return True
     except Exception as e:
         logger.error(f"Error in is_aadhaar_card check: {e}")
+        
+    if cache is not None:
+        cache["misc"][cache_key] = False
     return False
 
-def verify_identifier_presence(image, doc_type):
+def verify_identifier_presence(image, doc_type, image_path=None, cache=None):
     """
     Verifies that the unique ID number field is present and contains readable text.
     Acts as a secure check to filter out random, out-of-domain, or blank images.
     """
     try:
-        model = load_yolo_model(doc_type)
-        results = model(image, device=DEVICE)
+        cache_key = (image_path if image_path else id(image), f"verify_id_{doc_type}")
+        if cache is not None and cache_key in cache["misc"]:
+            return cache["misc"][cache_key]
+            
+        results = None
+        key_det = (image_path if image_path else id(image), doc_type)
+        if cache is not None:
+            results = cache["detections"].get(key_det)
+            
+        if results is None:
+            model = load_yolo_model(doc_type)
+            results = model(image, device=DEVICE)
+            if cache is not None:
+                cache["detections"][key_det] = results
+                
         class_names = CONFIG["models"][doc_type]["classes"]
         
         target_fields = {
@@ -316,41 +509,71 @@ def verify_identifier_presence(image, doc_type):
                     name = class_names[cls_idx]
                     if name in targets and conf >= 0.6:
                         h, w, _ = image.shape
-                        x_min, y_min, x_max, y_max = map(int, box.xyxy[0].tolist())
-                        x_min, y_min = max(0, x_min), max(0, y_min)
-                        x_max, y_max = min(w, x_max), min(h, y_max)
-                        region = image[y_min:y_max, x_min:x_max]
-                        if region.size == 0:
-                            continue
+                        box_coords = tuple(map(int, box.xyxy[0].tolist()))
+                        ocr_key = (image_path if image_path else id(image), box_coords)
+                        
+                        text = None
+                        if cache is not None:
+                            text = cache["ocr_crops"].get(ocr_key)
                             
-                        padded = cv2.copyMakeBorder(region, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
-                        from inference import OCR
-                        ocr_res = OCR.ocr(padded)
-                        if ocr_res:
-                            text_list = []
-                            for item in ocr_res:
-                                if isinstance(item, dict):
-                                    text_list.extend(item.get("rec_texts", []))
-                                elif isinstance(item, list):
-                                    for word in item:
-                                        if isinstance(word, list) and len(word) >= 2:
-                                            text_list.append(word[1][0])
-                            text = "".join(text_list).strip()
-                            if len(text) >= 4:
-                                logger.info(f"Verified identifier presence for {doc_type}: '{text}'")
-                                return True
+                        if text is None:
+                            x_min, y_min, x_max, y_max = box_coords
+                            x_min, y_min = max(0, x_min), max(0, y_min)
+                            x_max, y_max = min(w, x_max), min(h, y_max)
+                            region = image[y_min:y_max, x_min:x_max]
+                            if region.size == 0:
+                                continue
+                                
+                            padded = cv2.copyMakeBorder(region, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                            from inference import OCR
+                            ocr_res = OCR.ocr(padded)
+                            if ocr_res:
+                                text_list = []
+                                for item in ocr_res:
+                                    if isinstance(item, dict):
+                                        text_list.extend(item.get("rec_texts", []))
+                                    elif isinstance(item, list):
+                                        for word in item:
+                                            if isinstance(word, list) and len(word) >= 2:
+                                                text_list.append(word[1][0])
+                                text = "".join(text_list).strip()
+                            else:
+                                text = ""
+                            if cache is not None:
+                                cache["ocr_crops"][ocr_key] = text
+                                
+                        if len(text) >= 4:
+                            logger.info(f"Verified identifier presence for {doc_type}: '{text}'")
+                            if cache is not None:
+                                cache["misc"][cache_key] = True
+                            return True
     except Exception as e:
         logger.error(f"Error verifying identifier presence: {e}")
+        
+    if cache is not None:
+        cache["misc"][cache_key] = False
     return False
 
-def confirm_document_type(image, doc_type, threshold=0.5):
+def confirm_document_type(image, doc_type, threshold=0.5, image_path=None, cache=None):
     """
     Validates if the image contains features of the expected document type.
     Serves as a fallback correction when the classifier misclassifies the document.
     """
     try:
-        model = load_yolo_model(doc_type)
-        results = model(image, device=DEVICE)
+        cache_key = (image_path if image_path else id(image), f"confirm_{doc_type}")
+        if cache is not None and cache_key in cache["misc"]:
+            return cache["misc"][cache_key]
+            
+        results = None
+        key_det = (image_path if image_path else id(image), doc_type)
+        if cache is not None:
+            results = cache["detections"].get(key_det)
+            
+        if results is None:
+            model = load_yolo_model(doc_type)
+            results = model(image, device=DEVICE)
+            if cache is not None:
+                cache["detections"][key_det] = results
         
         class_names = CONFIG["models"][doc_type]["classes"]
         
@@ -366,39 +589,45 @@ def confirm_document_type(image, doc_type, threshold=0.5):
                     
         logger.info(f"confirm_document_type for '{doc_type}': detected fields {detections}")
         
+        result_bool = False
         if doc_type == "Aadhaar":
             has_high_conf_key = any(name in ["Aadhaar", "Address"] and conf >= 0.7 for name, conf in detections)
             has_two_fields = len([conf for name, conf in detections if conf >= 0.5]) >= 2
-            return has_high_conf_key or has_two_fields
+            result_bool = has_high_conf_key or has_two_fields
             
         elif doc_type == "Pan_Card":
             has_key = any(name in ["PAN", "Pan Card"] and conf >= 0.6 for name, conf in detections)
             has_two = len([conf for name, conf in detections if conf >= 0.5]) >= 2
-            return has_key or has_two
+            result_bool = has_key or has_two
             
         elif doc_type == "Driving_License":
             has_key = any(name in ["DL No", "Vehicle Type"] and conf >= 0.6 for name, conf in detections)
             has_two = len([conf for name, conf in detections if conf >= 0.5]) >= 2
-            return has_key or has_two
+            result_bool = has_key or has_two
             
         elif doc_type == "Voter_Id":
             voter_keys = {"Voter ID", "Card Voter ID 1 Front", "Card Voter ID 1 Back", "Card Voter ID 2 Front", "Card Voter ID 2 Back"}
             has_key = any(name in voter_keys and conf >= 0.6 for name, conf in detections)
             has_two = len([conf for name, conf in detections if conf >= 0.5]) >= 2
-            return has_key or has_two
+            result_bool = has_key or has_two
             
         elif doc_type == "Passport":
             passport_keys = {"MRZ1", "MRZ2", "Code"}
             has_key = any(name in passport_keys and conf >= 0.6 for name, conf in detections)
             has_two = len([conf for name, conf in detections if conf >= 0.5]) >= 2
-            return has_key or has_two
+            result_bool = has_key or has_two
             
-        return len([conf for name, conf in detections if conf >= threshold]) >= 1
+        else:
+            result_bool = len([conf for name, conf in detections if conf >= threshold]) >= 1
+            
+        if cache is not None:
+            cache["misc"][cache_key] = result_bool
+        return result_bool
     except Exception as e:
         logger.error(f"Error in confirm_document_type for {doc_type}: {e}")
         return False
 
-def extract_linking_identifier(image_path, doc_type):
+def extract_linking_identifier(image_path, doc_type, cache=None):
     """
     Optimized function to extract ONLY the unique ID number field,
     avoiding OCR on other fields (Name, Address, DOB, etc.) to save time.
@@ -406,6 +635,20 @@ def extract_linking_identifier(image_path, doc_type):
     try:
         import numpy as np
         from inference import preprocess_image, OCR
+        
+        # Load image (check cache first)
+        image = None
+        if cache is not None:
+            image = cache["images"].get(image_path)
+        if image is None:
+            image = cv2.imread(image_path)
+            if cache is not None and image is not None:
+                cache["images"][image_path] = image
+                
+        if image is None:
+            return None
+            
+        h, w, _ = image.shape
         
         # 1. Map doc_type to the specific class we want to detect
         doc_to_class = {
@@ -419,18 +662,19 @@ def extract_linking_identifier(image_path, doc_type):
         # For Passport, we need MRZ1, MRZ2, or Code (so multiple classes)
         target_classes = {target_class} if target_class else {"MRZ1", "MRZ2", "Code"}
         
-        # 2. Load the detection model
-        model = load_yolo_model(doc_type)
+        # 2. Load the detection model (check cache first)
+        results = None
+        key_det = (image_path, doc_type)
+        if cache is not None:
+            results = cache["detections"].get(key_det)
+            
+        if results is None:
+            model = load_yolo_model(doc_type)
+            results = model(image, device=DEVICE)
+            if cache is not None:
+                cache["detections"][key_det] = results
+                
         class_names = CONFIG["models"][doc_type]["classes"]
-        
-        # 3. Load image
-        image = cv2.imread(image_path)
-        if image is None:
-            return None
-        h, w, _ = image.shape
-        
-        # 4. Run detection
-        results = model(image_path, device=DEVICE)
         
         # Find the highest confidence box for target classes
         best_box = None
@@ -456,8 +700,17 @@ def extract_linking_identifier(image_path, doc_type):
             logger.warning(f"Target identifier class {target_classes} not detected in {image_path}.")
             return None
             
-        # 5. Crop the single best bounding box
-        x_min, y_min, x_max, y_max = map(int, best_box)
+        # Check cache for OCR crop result
+        best_box_tuple = tuple(map(int, best_box))
+        ocr_key = (image_path, best_box_tuple)
+        if cache is not None:
+            cached_text = cache["ocr_crops"].get(ocr_key)
+            if cached_text is not None:
+                logger.info(f"Optimized extraction (Cached) for {doc_type} identifier ({best_class}): {cached_text}")
+                return cached_text
+                
+        # 3. Crop the single best bounding box
+        x_min, y_min, x_max, y_max = best_box_tuple
         x_min, y_min = max(0, x_min), max(0, y_min)
         x_max, y_max = min(w, x_max), min(h, y_max)
         
@@ -465,15 +718,17 @@ def extract_linking_identifier(image_path, doc_type):
         if region_img.size == 0:
             return None
             
-        # 6. Preprocess ONLY this crop
+        # 4. Preprocess ONLY this crop
         region_img = preprocess_image(region_img)
         
         # Pad the crop (e.g. 15px white border) to aid OCR (10x faster than original giant black canvas)
         padded_img = cv2.copyMakeBorder(region_img, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
         
-        # 7. Run OCR
+        # 5. Run OCR
         ocr_result = OCR.ocr(padded_img)
         if not ocr_result:
+            if cache is not None:
+                cache["ocr_crops"][ocr_key] = ""
             return None
             
         extracted_text_list = []
@@ -488,8 +743,12 @@ def extract_linking_identifier(image_path, doc_type):
                         if isinstance(text_conf, (tuple, list)) and len(text_conf) >= 1:
                             extracted_text_list.append(text_conf[0])
                             
-        extracted_text = " ".join(extracted_text_list) if extracted_text_list else None
+        extracted_text = " ".join(extracted_text_list) if extracted_text_list else ""
         logger.info(f"Optimized extraction for {doc_type} identifier ({best_class}): {extracted_text}")
+        
+        if cache is not None:
+            cache["ocr_crops"][ocr_key] = extracted_text
+            
         return extracted_text
         
     except Exception as e:
@@ -503,7 +762,7 @@ def clean_id_number(val):
     # Filter only alphanumeric characters and uppercase
     return "".join(c.upper() for c in val if c.isalnum())
 
-def validate_single_image(image_path, expected_type=None, expected_side=None, confidence_threshold=0.75):
+def validate_single_image(image_path, expected_type=None, expected_side=None, confidence_threshold=0.75, cache=None):
     """
     Validates a single image against an expected document type and side.
     
@@ -522,7 +781,16 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
         
     try:
         classifier = load_yolo_model("Id_Classifier")
-        image = cv2.imread(image_path)
+        
+        # Load image (check cache first)
+        image = None
+        if cache is not None:
+            image = cache["images"].get(image_path)
+        if image is None:
+            image = cv2.imread(image_path)
+            if cache is not None and image is not None:
+                cache["images"][image_path] = image
+                
         if image is None:
             return {
                 "is_valid": False,
@@ -595,12 +863,19 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
     norm_expected_type = normalize_document_type(expected_type)
     
     # 1. First, check if it is actually an Aadhaar card (since classifier is prone to false positives on vertical Aadhaar)
-    is_aadhaar = is_aadhaar_card(image)
-    if is_aadhaar:
-        if detected_type != "Aadhaar":
-            logger.info(f"Overriding type from classifier ({detected_type}) to Aadhaar because Aadhaar structural fields were confidently detected.")
-            detected_type = "Aadhaar"
-            detected_side = None
+    is_aadhaar = False
+    # Only run is_aadhaar check if detected type is Aadhaar, Voter_Id, or classification confidence is low
+    if detected_type in ["Aadhaar", "Voter_Id"] or confidence < 0.80:
+        aadhaar_thresh = 0.7
+        if detected_type != "Aadhaar" and confidence >= 0.9:
+            aadhaar_thresh = 0.85
+            
+        is_aadhaar = is_aadhaar_card(image, image_path=image_path, cache=cache, threshold=aadhaar_thresh)
+        if is_aadhaar:
+            if detected_type != "Aadhaar":
+                logger.info(f"Overriding type from classifier ({detected_type}) to Aadhaar because Aadhaar structural fields were confidently detected.")
+                detected_type = "Aadhaar"
+                detected_side = None
             
     # 2. General type mismatch override fallback
     if norm_expected_type and detected_type != norm_expected_type:
@@ -609,7 +884,7 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             logger.info(f"Document confirmed as Aadhaar, but expected type is {norm_expected_type}. Disallowing override.")
         else:
             logger.info(f"Type mismatch detected (classifier: {detected_type}, expected: {norm_expected_type}). Running structure confirmation...")
-            if confirm_document_type(image, norm_expected_type, threshold=0.5):
+            if confirm_document_type(image, norm_expected_type, threshold=0.5, image_path=image_path, cache=cache):
                 logger.info(f"Overriding classified type from {detected_type} to expected type {norm_expected_type}")
                 detected_type = norm_expected_type
                 detected_side = None
@@ -618,7 +893,7 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
     
     # Resolve Voter ID side if generic voter_id class is returned
     if detected_type == "Voter_Id" and detected_side is None:
-        detected_side = determine_voter_id_side(image_path)
+        detected_side = determine_voter_id_side(image_path, cache=cache)
         if detected_side is None:
             return {
                 "is_valid": False,
@@ -631,14 +906,22 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             
     # Resolve/Correct Driving License side (classifier can confuse front/back)
     if detected_type == "Driving_License":
-        resolved_side = determine_driving_license_side(image_path)
+        if raw_class == "driving_license_front" and confidence >= 0.95:
+            resolved_side = "front"
+            logger.info("Trusting classifier 'driving_license_front' classification due to high confidence.")
+        elif raw_class == "driving_license_back" and confidence >= 0.80:
+            resolved_side = "back"
+            logger.info("Trusting classifier 'driving_license_back' classification due to high confidence.")
+        else:
+            resolved_side = determine_driving_license_side(image_path, cache=cache)
+            
         if resolved_side:
             logger.info(f"Overriding DL side from classifier ({detected_side}) to resolved side ({resolved_side})")
             detected_side = resolved_side
             
     # Resolve/Correct Aadhaar side (e.g. for vertical Aadhaar letters containing both sides)
     if detected_type == "Aadhaar":
-        resolved_side = determine_aadhaar_side(image_path)
+        resolved_side = determine_aadhaar_side(image_path, cache=cache)
         if resolved_side:
             logger.info(f"Overriding Aadhaar side from classifier ({detected_side}) to resolved side ({resolved_side})")
             detected_side = resolved_side
@@ -650,7 +933,7 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
         requires_id = False
         
     if requires_id:
-        if not verify_identifier_presence(image, detected_type):
+        if not verify_identifier_presence(image, detected_type, image_path=image_path, cache=cache):
             logger.warning(f"Could not detect or read unique ID number on {image_path} for type {detected_type}.")
             return {
                 "is_valid": False,
@@ -660,9 +943,9 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
                 "confidence": confidence,
                 "message": f"Verification failed: Unable to detect or read the unique ID identifier (e.g. Aadhaar No, Voter EPIC, PAN, DL No) on the document."
             }
-
+ 
     # Normalize expected type for comparison
-    norm_expected_type = normalize_document_type(expected_type)
+    # (Since norm_expected_type was defined earlier, we don't redefine it)
     
     # 2. Validate document type matches expected type
     if norm_expected_type and detected_type != norm_expected_type:
@@ -722,6 +1005,14 @@ def validate_document(front_image_path=None, back_image_path=None, expected_type
             "details": {}
         }
         
+    # Initialize request-level cache to share loaded images, detections, and crop OCR results
+    cache = {
+        "images": {},       # image_path -> numpy array
+        "detections": {},   # (image_path/id(image), doc_type) -> YOLO results list
+        "ocr_crops": {},    # (image_path/id(image), coords_tuple) -> OCR text
+        "misc": {}          # (image_path, key) -> value
+    }
+        
     report = {
         "is_valid": True,
         "status": "success",
@@ -733,7 +1024,7 @@ def validate_document(front_image_path=None, back_image_path=None, expected_type
     # --- 1. Single side validations ---
     if front_image_path:
         logger.info(f"Validating front image: {front_image_path}")
-        front_res = validate_single_image(front_image_path, expected_type, "front", confidence_threshold)
+        front_res = validate_single_image(front_image_path, expected_type, "front", confidence_threshold, cache=cache)
         report["details"]["front"] = front_res
         if not front_res["is_valid"]:
             report["is_valid"] = False
@@ -742,7 +1033,7 @@ def validate_document(front_image_path=None, back_image_path=None, expected_type
             
     if back_image_path:
         logger.info(f"Validating back image: {back_image_path}")
-        back_res = validate_single_image(back_image_path, expected_type, "back", confidence_threshold)
+        back_res = validate_single_image(back_image_path, expected_type, "back", confidence_threshold, cache=cache)
         report["details"]["back"] = back_res
         if not back_res["is_valid"]:
             # If front was valid but back isn't, we override is_valid and status
@@ -768,8 +1059,8 @@ def validate_document(front_image_path=None, back_image_path=None, expected_type
             doc_type = front_details["detected_type"]
             logger.info(f"Cross-linking front and back sides of {doc_type} using OCR...")
             
-            front_id = extract_linking_identifier(front_image_path, doc_type)
-            back_id = extract_linking_identifier(back_image_path, doc_type)
+            front_id = extract_linking_identifier(front_image_path, doc_type, cache=cache)
+            back_id = extract_linking_identifier(back_image_path, doc_type, cache=cache)
             
             clean_front = clean_id_number(front_id)
             clean_back = clean_id_number(back_id)
