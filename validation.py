@@ -880,9 +880,16 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
     # 2. General type mismatch override fallback
     if norm_expected_type and detected_type != norm_expected_type:
         # If the document is verified as Aadhaar, but they expect something else, do NOT allow overriding to the expected type!
+        # Also, do not allow overriding highly confident classifier predictions to DL, PAN, or Passport to prevent false positive overrides.
+        can_override = True
         if is_aadhaar:
+            can_override = False
             logger.info(f"Document confirmed as Aadhaar, but expected type is {norm_expected_type}. Disallowing override.")
-        else:
+        elif confidence >= 0.90 and norm_expected_type not in ["Aadhaar", "Voter_Id"]:
+            can_override = False
+            logger.info(f"Trusting highly confident classifier prediction '{detected_type}' ({confidence:.2f}). Disallowing override to '{norm_expected_type}'.")
+            
+        if can_override:
             logger.info(f"Type mismatch detected (classifier: {detected_type}, expected: {norm_expected_type}). Running structure confirmation...")
             if confirm_document_type(image, norm_expected_type, threshold=0.5, image_path=image_path, cache=cache):
                 logger.info(f"Overriding classified type from {detected_type} to expected type {norm_expected_type}")
