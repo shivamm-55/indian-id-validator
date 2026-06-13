@@ -24,7 +24,7 @@ def load_config(config_path="config.json"):
 CONFIG = load_config()
 
 # Initialize PaddleOCR
-OCR = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
+OCR = PaddleOCR(use_angle_cls=True, lang="en")
 
 # Preprocessing functions
 def upscale_image(image, scale=2):
@@ -84,7 +84,7 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
     # Download and load model
     def load_model(model_key):
         model_path = CONFIG["models"][model_key]["path"]
-        if not os.path.exists(model_path):
+        if not os.path.exists(model_path) or os.path.getsize(model_path) < 1000:
             model_path = hf_hub_download(repo_id="logasanjeev/indian-id-validator", filename=model_path)
         return YOLO(model_path)
 
@@ -171,38 +171,57 @@ def process_id(image_path, model_name=None, save_json=True, output_json="detecte
             black_canvas[top_left_y:top_left_y+region_h, top_left_x:top_left_x+region_w] = region_img
 
             # Perform OCR
-            ocr_result = OCR.ocr(black_canvas, cls=True)
+            ocr_result = OCR.ocr(black_canvas)
             if ocr_result is None or not ocr_result:
                 logger.warning(f"No OCR result for class: {class_name}. Skipping.")
                 detected_text[class_name] = "No text detected"
                 continue
-            extracted_text = []
-            for line in ocr_result:
-                if line is None:
-                    continue
-                for word_info in line:
-                    if word_info is None or len(word_info) < 2 or not word_info[1]:
-                        continue
-                    extracted_text.append(word_info[1][0])
-            extracted_text = " ".join(extracted_text) if extracted_text else "No text detected"
+            
+            # Parse OCR results supporting both legacy and new structures
+            extracted_text_list = []
+            extracted_boxes = []
+            
+            for item in ocr_result:
+                if isinstance(item, dict):
+                    # PaddleOCR 3.x structure
+                    rec_texts = item.get("rec_texts", [])
+                    extracted_text_list.extend(rec_texts)
+                    # Support both rec_boxes and rec_polys
+                    boxes_data = item.get("rec_boxes", [])
+                    if len(boxes_data) == 0:
+                        boxes_data = item.get("rec_polys", [])
+                    for b in boxes_data:
+                        extracted_boxes.append(b)
+                elif isinstance(item, list):
+                    # Legacy structure: [ [box, (text, conf)], ... ]
+                    for word_info in item:
+                        if isinstance(word_info, list) and len(word_info) >= 2:
+                            box = word_info[0]
+                            text_conf = word_info[1]
+                            if isinstance(text_conf, (tuple, list)) and len(text_conf) >= 1:
+                                extracted_text_list.append(text_conf[0])
+                                extracted_boxes.append(box)
+                                
+            extracted_text = " ".join(extracted_text_list) if extracted_text_list else "No text detected"
             logger.info(f"Extracted text for {class_name}: {extracted_text}")
             detected_text[class_name] = extracted_text
-
+ 
             # Draw OCR bounding boxes
-            for line in ocr_result:
-                if line is None:
-                    continue
-                for word_info in line:
-                    if word_info is None or len(word_info) < 1:
-                        continue
-                    try:
-                        box = word_info[0]
+            for box in extracted_boxes:
+                try:
+                    # Each box is a list/array of 4 points [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+                    # or a flat array of 4 coordinates [x1, y1, x2, y2]
+                    if len(box) == 4 and isinstance(box[0], (list, np.ndarray, list)):
                         x1, y1 = int(box[0][0]), int(box[0][1])
                         x2, y2 = int(box[2][0]), int(box[2][1])
-                        cv2.rectangle(black_canvas, (x1, y1), (x2, y2), (0, 255, 0), 5)
-                    except (IndexError, TypeError) as e:
-                        logger.error(f"Error drawing OCR box for class {class_name}: {e}")
-                        continue
+                    else:
+                        # Fallback for flat array [x1, y1, x2, y2] or other formats
+                        x1, y1 = int(box[0]), int(box[1])
+                        x2, y2 = int(box[2]), int(box[3])
+                    cv2.rectangle(black_canvas, (x1, y1), (x2, y2), (0, 255, 0), 5)
+                except Exception as e:
+                    logger.error(f"Error drawing OCR box for class {class_name}: {e}")
+                    continue
 
             # Save processed image
             processed_images.append((class_name, black_canvas, extracted_text))
