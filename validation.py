@@ -133,11 +133,77 @@ def determine_aadhaar_side(image_path):
     
     return None
 
+def is_valid_aadhaar_number(text):
+    if not text:
+        return False
+    clean = text.upper().replace(" ", "").replace("-", "")
+    has_masking = any(c in clean for c in ["X", "*"])
+    clean_no_mask = clean.replace("X", "").replace("*", "")
+    
+    if not clean_no_mask.isdigit():
+        return False
+        
+    if has_masking:
+        # Masked Aadhaar number: e.g. XXXX XXXX 9281, total length 8 to 12, non-masked is 4 digits
+        return len(clean) >= 8 and len(clean) <= 12 and len(clean_no_mask) == 4
+    else:
+        # Full Aadhaar number: exactly 12 digits
+        return len(clean) == 12
+
 def determine_driving_license_side(image_path):
     """
-    Determines whether a Driving License image is the front or back side by checking detected fields.
-    Useful for correcting classification errors when the classifier confuses front and back.
+    Determines whether a Driving License image is the front or back side.
+    Uses a fast OCR keyword check (on a downscaled version of the image)
+    which is extremely robust compared to bounding box class heuristics.
     """
+    try:
+        from inference import OCR
+        import cv2
+        
+        img = cv2.imread(image_path)
+        if img is None:
+            return None
+            
+        # Downscale to max width 512 for sub-200ms OCR execution
+        h, w = img.shape[:2]
+        if w > 512:
+            scale = 512 / w
+            img = cv2.resize(img, (512, int(h * scale)))
+            
+        padded = cv2.copyMakeBorder(img, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+        ocr_res = OCR.ocr(padded)
+        
+        text_list = []
+        if ocr_res:
+            for item in ocr_res:
+                if isinstance(item, dict):
+                    text_list.extend(item.get("rec_texts", []))
+                elif isinstance(item, list):
+                    for word in item:
+                        if isinstance(word, list) and len(word) >= 2:
+                            text_list.append(word[1][0])
+                            
+        full_text = " ".join(text_list).lower()
+        logger.info(f"DL side OCR text: {full_text}")
+        
+        back_keywords = ["address", "signature", "holder", "endorsement", "sign", "authority"]
+        front_keywords = ["dob", "father", "blood", "licence", "license", "validity"]
+        
+        back_matches = sum(1 for kw in back_keywords if kw in full_text)
+        front_matches = sum(1 for kw in front_keywords if kw in full_text)
+        
+        if "address" in full_text:
+            return "back"
+            
+        if back_matches > front_matches:
+            return "back"
+        elif front_matches > back_matches:
+            return "front"
+            
+    except Exception as e:
+        logger.error(f"Error in OCR DL side resolution: {e}")
+        
+    # Fallback to YOLO model heuristic if OCR fails
     try:
         dl_model = load_yolo_model("Driving_License")
         results = dl_model(image_path, device=DEVICE)
@@ -145,9 +211,6 @@ def determine_driving_license_side(image_path):
         front_score = 0.0
         back_score = 0.0
         
-        # DL field classes
-        # Front indicators: "DL No", "Name", "DOB", "Relation With"
-        # Back indicators: "Address", "Vehicle Type", "RTO", "State"
         front_classes = {"DL No", "Name", "DOB", "Relation With", "Blood Group"}
         back_classes = {"Address", "Vehicle Type", "RTO", "State"}
         
@@ -165,9 +228,7 @@ def determine_driving_license_side(image_path):
                         front_score += conf
                     elif class_name in back_classes:
                         back_score += conf
-        
-        logger.info(f"DL side determination scores -> Front: {front_score:.2f}, Back: {back_score:.2f}")
-        
+                        
         if front_score > back_score and front_score > 0.3:
             return "front"
         elif back_score > front_score and back_score > 0.3:
@@ -194,11 +255,33 @@ def is_aadhaar_card(image):
                 conf = box.conf[0].item()
                 if cls_idx < len(class_names):
                     name = class_names[cls_idx]
-                    # Confident Aadhaar number detection or critical front fields
+                    # ONLY trust the Aadhaar number field, which is unique to Aadhaar layouts
                     if name == "Aadhaar" and conf >= 0.7:
-                        return True
-                    if name in ["Name", "DOB", "Gender"] and conf >= 0.75:
-                        return True
+                        # Verify the format of the detected Aadhaar number to prevent false positives on DL
+                        h, w, _ = image.shape
+                        x_min, y_min, x_max, y_max = map(int, box.xyxy[0].tolist())
+                        x_min, y_min = max(0, x_min), max(0, y_min)
+                        x_max, y_max = min(w, x_max), min(h, y_max)
+                        region = image[y_min:y_max, x_min:x_max]
+                        if region.size == 0:
+                            continue
+                            
+                        padded = cv2.copyMakeBorder(region, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                        from inference import OCR
+                        ocr_res = OCR.ocr(padded)
+                        if ocr_res:
+                            text_list = []
+                            for item in ocr_res:
+                                if isinstance(item, dict):
+                                    text_list.extend(item.get("rec_texts", []))
+                                elif isinstance(item, list):
+                                    for word in item:
+                                        if isinstance(word, list) and len(word) >= 2:
+                                            text_list.append(word[1][0])
+                            text = "".join(text_list).strip()
+                            if is_valid_aadhaar_number(text):
+                                logger.info(f"Confirmed as actual Aadhaar card (Aadhaar No format matches: '{text}')")
+                                return True
     except Exception as e:
         logger.error(f"Error in is_aadhaar_card check: {e}")
     return False
