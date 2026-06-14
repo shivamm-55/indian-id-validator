@@ -1,3 +1,8 @@
+import os
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["FLAGS_use_onednn"] = "0"
+os.environ["PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT"] = "0"
+
 import cv2
 import json
 import numpy as np
@@ -5,7 +10,6 @@ import matplotlib.pyplot as plt
 from ultralytics import YOLO
 from paddleocr import PaddleOCR
 from huggingface_hub import hf_hub_download
-import os
 import logging
 
 # Set up logging
@@ -63,7 +67,8 @@ OCR = PaddleOCR(
     lang="en",
     use_doc_orientation_classify=False,
     use_doc_unwarping=False,
-    use_textline_orientation=False
+    use_textline_orientation=False,
+    enable_mkldnn=False
 )
 
 # Preprocessing functions
