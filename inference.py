@@ -21,7 +21,7 @@ logging.info(f"Using device for YOLO models: {DEVICE}")
 # Load configuration
 def load_config(config_path="config.json"):
     if not os.path.exists(config_path):
-        config_path = hf_hub_download(repo_id="logasanjeev/indian-id-validator", filename=config_path)
+        config_path = hf_hub_download(repo_id="shivamm-55/indian-id-validator", filename=config_path)
     with open(config_path, "r") as f:
         return json.load(f)
 
@@ -43,7 +43,7 @@ def load_yolo_model(model_key):
     
     if not os.path.exists(model_path) or os.path.getsize(model_path) < 1000:
         logger.info(f"Model weights for {model_key} not found or placeholder at {model_path}. Downloading weights...")
-        resolved_path = hf_hub_download(repo_id="logasanjeev/indian-id-validator", filename=model_path)
+        resolved_path = hf_hub_download(repo_id="shivamm-55/indian-id-validator", filename=model_path)
         # Update CONFIG entry to bypass network check next time
         model_entry["path"] = resolved_path
         model_path = resolved_path
