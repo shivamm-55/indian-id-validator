@@ -927,24 +927,6 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             logger.info(f"Overriding Aadhaar side from classifier ({detected_side}) to resolved side ({resolved_side})")
             detected_side = resolved_side
             
-    # Verify that the unique ID number field is present and readable on the document
-    # For DL and Voter ID, we only require it on the front side.
-    requires_id = True
-    if detected_type in ["Driving_License", "Voter_Id"] and detected_side == "back":
-        requires_id = False
-        
-    if requires_id:
-        if not verify_identifier_presence(image, detected_type, image_path=image_path, cache=cache):
-            logger.warning(f"Could not detect or read unique ID number on {image_path} for type {detected_type}.")
-            return {
-                "is_valid": False,
-                "status": "unable_to_verify",
-                "detected_type": detected_type,
-                "detected_side": detected_side,
-                "confidence": confidence,
-                "message": f"Verification failed: Unable to detect or read the unique ID identifier (e.g. Aadhaar No, Voter EPIC, PAN, DL No) on the document."
-            }
- 
     # Normalize expected type for comparison
     # (Since norm_expected_type was defined earlier, we don't redefine it)
     
@@ -969,6 +951,24 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             "confidence": confidence,
             "message": f"Document side mismatch: expected {expected_side}, but detected {detected_side}"
         }
+
+    # Verify that the unique ID number field is present and readable on the document
+    # For DL and Voter ID, we only require it on the front side.
+    requires_id = True
+    if detected_type in ["Driving_License", "Voter_Id"] and detected_side == "back":
+        requires_id = False
+        
+    if requires_id:
+        if not verify_identifier_presence(image, detected_type, image_path=image_path, cache=cache):
+            logger.warning(f"Could not detect or read unique ID number on {image_path} for type {detected_type}.")
+            return {
+                "is_valid": False,
+                "status": "unable_to_verify",
+                "detected_type": detected_type,
+                "detected_side": detected_side,
+                "confidence": confidence,
+                "message": f"Verification failed: Unable to detect or read the unique ID identifier (e.g. Aadhaar No, Voter EPIC, PAN, DL No) on the document."
+            }
         
     return {
         "is_valid": True,
