@@ -28,10 +28,13 @@ def normalize_document_type(expected_type):
         "aadhaar": "Aadhaar",
         "aadhar": "Aadhaar",
         "pan": "Pan_Card",
+        "pancard": "Pan_Card",
         "passport": "Passport",
         "voterid": "Voter_Id",
+        "voter": "Voter_Id",
         "votercard": "Voter_Id",
-        "drivinglicense": "Driving_License"
+        "drivinglicense": "Driving_License",
+        "dl": "Driving_License"
     }
     return mapping.get(clean, None)
 
