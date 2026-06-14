@@ -62,9 +62,6 @@ model-index:
     - name: Fitness
       type: fitness
       value: 0.577
-    source:
-      name: Kaggle Notebook
-      url: https://www.kaggle.com/code/ravindranlogasanjeev/aadhaar
 - name: Driving_License
   results:
   - task:
