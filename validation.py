@@ -956,9 +956,9 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
         }
 
     # Verify that the unique ID number field is present and readable on the document
-    # For DL and Voter ID, we only require it on the front side.
+    # For DL, Voter ID, and Aadhaar, we only require it on the front side.
     requires_id = True
-    if detected_type in ["Driving_License", "Voter_Id"] and detected_side == "back":
+    if detected_type in ["Driving_License", "Voter_Id", "Aadhaar"] and detected_side == "back":
         requires_id = False
         
     if requires_id:
