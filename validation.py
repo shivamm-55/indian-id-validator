@@ -603,9 +603,12 @@ def confirm_document_type(image, doc_type, threshold=0.5, image_path=None, cache
             result_bool = has_key or has_two
             
         elif doc_type == "Voter_Id":
-            voter_keys = {"Voter ID", "Card Voter ID 1 Front", "Card Voter ID 1 Back", "Card Voter ID 2 Front", "Card Voter ID 2 Back"}
+            voter_keys = {"Voter ID", "Card Voter ID 1 Front", "Card Voter ID 1 Back", "Card Voter ID 2 Front", "Card Voter ID 2 Back", "Symbol", "Election", "Date of Issue"}
             has_key = any(name in voter_keys and conf >= 0.6 for name, conf in detections)
-            has_two = len([conf for name, conf in detections if conf >= 0.5]) >= 2
+            has_two = False
+            valid_detections = [name for name, conf in detections if conf >= 0.5]
+            if len(valid_detections) >= 2:
+                has_two = any(name in voter_keys for name in valid_detections)
             result_bool = has_key or has_two
             
         elif doc_type == "Passport":
@@ -882,7 +885,7 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
         if is_aadhaar:
             can_override = False
             logger.info(f"Document confirmed as Aadhaar, but expected type is {norm_expected_type}. Disallowing override.")
-        elif confidence >= 0.90 and norm_expected_type not in ["Aadhaar", "Voter_Id"]:
+        elif confidence >= 0.90:
             can_override = False
             logger.info(f"Trusting highly confident classifier prediction '{detected_type}' ({confidence:.2f}). Disallowing override to '{norm_expected_type}'.")
             
