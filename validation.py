@@ -588,7 +588,7 @@ def confirm_document_type(image, doc_type, threshold=0.5, image_path=None, cache
         
         result_bool = False
         if doc_type == "Aadhaar":
-            has_high_conf_key = any(name in ["Aadhaar", "Address"] and conf >= 0.7 for name, conf in detections)
+            has_high_conf_key = any(name in ["Aadhaar"] and conf >= 0.7 for name, conf in detections)
             has_two_fields = len([conf for name, conf in detections if conf >= 0.5]) >= 2
             result_bool = has_high_conf_key or has_two_fields
             
@@ -886,8 +886,11 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             can_override = False
             logger.info(f"Document confirmed as Aadhaar, but expected type is {norm_expected_type}. Disallowing override.")
         elif confidence >= 0.90:
-            can_override = False
-            logger.info(f"Trusting highly confident classifier prediction '{detected_type}' ({confidence:.2f}). Disallowing override to '{norm_expected_type}'.")
+            # Allow overrides between Aadhaar and Voter_Id due to classifier confusion on vertical/card layouts
+            confusable = (detected_type in ["Aadhaar", "Voter_Id"] and norm_expected_type in ["Aadhaar", "Voter_Id"])
+            if not confusable:
+                can_override = False
+                logger.info(f"Trusting highly confident classifier prediction '{detected_type}' ({confidence:.2f}). Disallowing override to '{norm_expected_type}'.")
             
         if can_override:
             logger.info(f"Type mismatch detected (classifier: {detected_type}, expected: {norm_expected_type}). Running structure confirmation...")
@@ -938,6 +941,34 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
     
     # 2. Validate document type matches expected type
     if norm_expected_type and detected_type != norm_expected_type:
+        # If the detected type does not match the expected type, verify that the mismatched
+        # document is actually a valid card of that detected type (for front sides)
+        # to avoid falsely claiming we detected a Voter ID/DL/PAN on a random meme or scenery image.
+        if detected_type is not None:
+            side_to_check = detected_side
+            if detected_type == "Voter_Id" and side_to_check is None:
+                side_to_check = determine_voter_id_side(image_path, cache=cache)
+                
+            requires_id = True
+            if detected_type in ["Driving_License", "Voter_Id", "Aadhaar"] and side_to_check == "back":
+                requires_id = False
+                
+            if requires_id:
+                if not verify_identifier_presence(image, detected_type, image_path=image_path, cache=cache):
+                    logger.info(f"Mismatched detected type '{detected_type}' failed unique identifier check. Reclassifying as None to prevent false positive mismatch reports.")
+                    detected_type = None
+                    detected_side = None
+
+        if detected_type is None:
+            return {
+                "is_valid": False,
+                "status": "unable_to_verify",
+                "detected_type": None,
+                "detected_side": None,
+                "confidence": confidence,
+                "message": "We could not confidently identify this image as a valid ID card. Please ensure the image is clear, well-lit, uncropped, and not a random object or scenery."
+            }
+
         return {
             "is_valid": False,
             "status": "mismatch",
