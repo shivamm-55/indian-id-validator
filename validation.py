@@ -866,11 +866,7 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
     is_aadhaar = False
     # Only run is_aadhaar check if detected type is Aadhaar, Voter_Id, or classification confidence is low
     if detected_type in ["Aadhaar", "Voter_Id"] or confidence < 0.80:
-        aadhaar_thresh = 0.7
-        if detected_type != "Aadhaar" and confidence >= 0.9:
-            aadhaar_thresh = 0.85
-            
-        is_aadhaar = is_aadhaar_card(image, image_path=image_path, cache=cache, threshold=aadhaar_thresh)
+        is_aadhaar = is_aadhaar_card(image, image_path=image_path, cache=cache, threshold=0.7)
         if is_aadhaar:
             if detected_type != "Aadhaar":
                 logger.info(f"Overriding type from classifier ({detected_type}) to Aadhaar because Aadhaar structural fields were confidently detected.")
@@ -978,17 +974,6 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             "message": f"Document type mismatch: expected {norm_expected_type}, but detected {detected_type}"
         }
         
-    # 3. Validate document side matches expected side
-    if expected_side and detected_side != expected_side:
-        return {
-            "is_valid": False,
-            "status": "mismatch",
-            "detected_type": detected_type,
-            "detected_side": detected_side,
-            "confidence": confidence,
-            "message": f"Document side mismatch: expected {expected_side}, but detected {detected_side}"
-        }
-
     # Verify that the unique ID number field is present and readable on the document
     # For DL, Voter ID, and Aadhaar, we only require it on the front side.
     requires_id = True
@@ -1006,6 +991,17 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
                 "confidence": confidence,
                 "message": f"Verification failed: Unable to detect or read the unique ID identifier (e.g. Aadhaar No, Voter EPIC, PAN, DL No) on the document."
             }
+
+    # 3. Validate document side matches expected side
+    if expected_side and detected_side != expected_side:
+        return {
+            "is_valid": False,
+            "status": "mismatch",
+            "detected_type": detected_type,
+            "detected_side": detected_side,
+            "confidence": confidence,
+            "message": f"Document side mismatch: expected {expected_side}, but detected {detected_side}"
+        }
         
     return {
         "is_valid": True,
