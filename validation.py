@@ -835,7 +835,7 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             "detected_type": None,
             "detected_side": None,
             "confidence": confidence,
-            "message": f"Classification confidence too low ({confidence:.2f} < {confidence_threshold})"
+            "message": "We could not confidently identify this image as a valid ID card. Please ensure the image is clear, well-lit, uncropped, and not a random object or scenery."
         }
         
     # Map raw classification class to normalized type and side
@@ -912,15 +912,7 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             
     # Resolve/Correct Driving License side (classifier can confuse front/back)
     if detected_type == "Driving_License":
-        if raw_class == "driving_license_front" and confidence >= 0.95:
-            resolved_side = "front"
-            logger.info("Trusting classifier 'driving_license_front' classification due to high confidence.")
-        elif raw_class == "driving_license_back" and confidence >= 0.80:
-            resolved_side = "back"
-            logger.info("Trusting classifier 'driving_license_back' classification due to high confidence.")
-        else:
-            resolved_side = determine_driving_license_side(image_path, cache=cache)
-            
+        resolved_side = determine_driving_license_side(image_path, cache=cache)
         if resolved_side:
             logger.info(f"Overriding DL side from classifier ({detected_side}) to resolved side ({resolved_side})")
             detected_side = resolved_side
@@ -952,6 +944,11 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             if requires_id:
                 if not verify_identifier_presence(image, detected_type, image_path=image_path, cache=cache):
                     logger.info(f"Mismatched detected type '{detected_type}' failed unique identifier check. Reclassifying as None to prevent false positive mismatch reports.")
+                    detected_type = None
+                    detected_side = None
+            else:
+                if not confirm_document_type(image, detected_type, threshold=0.5, image_path=image_path, cache=cache):
+                    logger.info(f"Mismatched detected type '{detected_type}' back side failed structural confirmation. Reclassifying as None to prevent false positive mismatch reports.")
                     detected_type = None
                     detected_side = None
 
@@ -990,6 +987,18 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
                 "detected_side": detected_side,
                 "confidence": confidence,
                 "message": f"Verification failed: Unable to detect or read the unique ID identifier (e.g. Aadhaar No, Voter EPIC, PAN, DL No) on the document."
+            }
+    else:
+        # For back sides, verify structural confirmation of the document type to filter out random/out-of-domain images
+        if not confirm_document_type(image, detected_type, threshold=0.5, image_path=image_path, cache=cache):
+            logger.warning(f"Back side structural confirmation failed on {image_path} for type {detected_type}.")
+            return {
+                "is_valid": False,
+                "status": "unable_to_verify",
+                "detected_type": detected_type,
+                "detected_side": detected_side,
+                "confidence": confidence,
+                "message": "We could not confidently identify this image as a valid ID card back side. Please ensure the image is clear, well-lit, uncropped, and not a random object or scenery."
             }
 
     # 3. Validate document side matches expected side
