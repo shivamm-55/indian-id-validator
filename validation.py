@@ -293,8 +293,8 @@ def determine_driving_license_side(image_path, cache=None):
                     tess_text = pytesseract.image_to_string(adaptive).lower()
                     logger.info(f"DL side Tesseract text (512px): {tess_text.strip()[:100]}...")
                     
-                    back_keywords = ["address", "signature", "holder", "endorsement", "sign", "authority"]
-                    front_keywords = ["dob", "father", "blood", "licence", "license", "validity"]
+                    back_keywords = ["address", "signature", "holder", "endorsement", "sign", "authority", "form", "fom", "dto", "rto"]
+                    front_keywords = ["dob", "father", "blood", "validity", "name", "husband", "s/d/w"]
                     
                     back_matches = sum(1 for kw in back_keywords if kw in tess_text)
                     front_matches = sum(1 for kw in front_keywords if kw in tess_text)
@@ -356,8 +356,8 @@ def determine_driving_license_side(image_path, cache=None):
                     full_text = " ".join(text_list).lower()
                     logger.info(f"DL side OCR text (320px): {full_text}")
                     
-                    back_keywords = ["address", "signature", "holder", "endorsement", "sign", "authority"]
-                    front_keywords = ["dob", "father", "blood", "licence", "license", "validity"]
+                    back_keywords = ["address", "signature", "holder", "endorsement", "sign", "authority", "form", "fom", "dto", "rto"]
+                    front_keywords = ["dob", "father", "blood", "validity", "name", "husband", "s/d/w"]
                     
                     back_matches = sum(1 for kw in back_keywords if kw in full_text)
                     front_matches = sum(1 for kw in front_keywords if kw in full_text)
@@ -513,6 +513,65 @@ def search_identifier_in_text(text, doc_type):
         return any(re.search(pat, text) for pat in patterns)
         
     return False
+
+def extract_identifier_from_text(text, doc_type):
+    """
+    Extracts the unique ID number from full-image OCR text using pattern matching.
+    """
+    if not text:
+        return None
+    text = text.upper()
+    
+    if doc_type == "Aadhaar":
+        # Find 12 digits or masked pattern
+        patterns = [
+            r'\b(\d{4}\s\d{4}\s\d{4})\b',
+            r'\b([X\*]{4}\s[X\*]{4}\s\d{4})\b',
+            r'\b(\d{12})\b'
+        ]
+        for pat in patterns:
+            match = re.search(pat, text)
+            if match:
+                return match.group(1)
+                
+    elif doc_type == "Pan_Card":
+        # Find 5 letters + 4 digits + 1 letter
+        pattern = r'\b([A-Z]{5}\d{4}[A-Z])\b'
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+            
+    elif doc_type == "Driving_License":
+        # Find standard DL: e.g. DL14 20110012345, DL-1420110012345, JH09 20210020533, RJ14C20220018637
+        patterns = [
+            r'([A-Z]{2}\d{2}[A-Z]?\s*\d{4}\s*\d{7})',
+            r'([A-Z]{2}-\d{2}-\d{11})',
+            r'([A-Z]{2}\d{13})'
+        ]
+        for pat in patterns:
+            match = re.search(pat, text)
+            if match:
+                return match.group(1)
+                
+    elif doc_type == "Voter_Id":
+        # Find EPIC format
+        patterns = [
+            r'\b([A-Z]{3}\d{7})\b',
+            r'([A-Z]{2,3}/\d+(?:/\d+)+)'
+        ]
+        for pat in patterns:
+            match = re.search(pat, text)
+            if match:
+                return match.group(1)
+                
+    elif doc_type == "Passport":
+        # Find 1 letter + 7 digits
+        pattern = r'\b([A-Z]\d{7})\b'
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+            
+    return None
 
 def verify_identifier_presence(image, doc_type, image_path=None, cache=None):
     """
@@ -713,6 +772,61 @@ def confirm_document_type(image, doc_type, threshold=0.5, image_path=None, cache
         else:
             result_bool = len([conf for name, conf in detections if conf >= threshold]) >= 1
             
+        if not result_bool:
+            # Fallback: If YOLO model fails to confirm structurally, check full-image OCR text for high-confidence keywords.
+            logger.info(f"YOLO structural confirmation failed for {doc_type}. Running full-image OCR keyword fallback...")
+            
+            # Fetch full image OCR results
+            ocr_res = None
+            if cache is not None and (image_path if image_path else id(image), "full_ocr") in cache["misc"]:
+                ocr_res = cache["misc"][(image_path if image_path else id(image), "full_ocr")]
+                
+            if ocr_res is None:
+                h, w = image.shape[:2]
+                w_target = 320
+                if w > w_target:
+                    scale = w_target / w
+                    img_resized = cv2.resize(image, (w_target, int(h * scale)))
+                else:
+                    img_resized = image
+                padded = cv2.copyMakeBorder(img_resized, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                from inference import OCR
+                ocr_res = OCR.ocr(padded)
+                if cache is not None:
+                    cache["misc"][(image_path if image_path else id(image), "full_ocr")] = ocr_res
+                    
+            text_list = []
+            if ocr_res:
+                for item in ocr_res:
+                    if isinstance(item, dict):
+                        text_list.extend(item.get("rec_texts", []))
+                    elif isinstance(item, list):
+                        for word in item:
+                            if isinstance(word, list) and len(word) >= 2:
+                                text_list.append(word[1][0])
+                                
+            full_text = " ".join(text_list).lower()
+            
+            if doc_type == "Aadhaar":
+                keywords = ["aadhaar", "uidai", "government of india", "enrollment", "unique identification", "आधार", "भारत सरकार"]
+                result_bool = any(kw in full_text for kw in keywords)
+                
+            elif doc_type == "Pan_Card":
+                keywords = ["pan", "permanent account", "income tax", "department", "govt of india", "incometaxindia", "आयकर"]
+                result_bool = any(kw in full_text for kw in keywords)
+                
+            elif doc_type == "Driving_License":
+                keywords = ["driving", "licence", "license", "form 7", "fom 7", "form-7", "endorsement", "transport", "rto", "dto", "motor", "vehicle", "cov"]
+                result_bool = any(kw in full_text for kw in keywords)
+                
+            elif doc_type == "Voter_Id":
+                keywords = ["election commission", "electoral", "voter", "epic", "identity card", "भारत निर्वाचन आयोग", "पहचान पत्र"]
+                result_bool = any(kw in full_text for kw in keywords)
+                
+            elif doc_type == "Passport":
+                keywords = ["passport", "republic of india", "भारत गणराज्य", "mrz"]
+                result_bool = any(kw in full_text for kw in keywords)
+                
         if cache is not None:
             cache["misc"][cache_key] = result_bool
         return result_bool
@@ -790,7 +904,42 @@ def extract_linking_identifier(image_path, doc_type, cache=None):
                         best_class = class_name
                         
         if best_box is None:
-            logger.warning(f"Target identifier class {target_classes} not detected in {image_path}.")
+            logger.info(f"Target identifier class {target_classes} not detected in {image_path}. Running full-image OCR extraction fallback...")
+            
+            # Fetch full image OCR results
+            ocr_res = None
+            if cache is not None and (image_path, "full_ocr") in cache["misc"]:
+                ocr_res = cache["misc"][(image_path, "full_ocr")]
+                
+            if ocr_res is None:
+                h, w = image.shape[:2]
+                w_target = 320
+                if w > w_target:
+                    scale = w_target / w
+                    img_resized = cv2.resize(image, (w_target, int(h * scale)))
+                else:
+                    img_resized = image
+                padded = cv2.copyMakeBorder(img_resized, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+                ocr_res = OCR.ocr(padded)
+                if cache is not None:
+                    cache["misc"][(image_path, "full_ocr")] = ocr_res
+                    
+            text_list = []
+            if ocr_res:
+                for item in ocr_res:
+                    if isinstance(item, dict):
+                        text_list.extend(item.get("rec_texts", []))
+                    elif isinstance(item, list):
+                        for word in item:
+                            if isinstance(word, list) and len(word) >= 2:
+                                text_list.append(word[1][0])
+                                
+            full_text = " ".join(text_list)
+            extracted_id = extract_identifier_from_text(full_text, doc_type)
+            if extracted_id:
+                logger.info(f"Extracted {doc_type} identifier via full-image OCR fallback: '{extracted_id}'")
+                return extracted_id
+                
             return None
             
         # Check cache for OCR crop result
