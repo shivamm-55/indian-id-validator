@@ -2,6 +2,7 @@ import os
 import cv2
 import json
 import logging
+import re
 # Import required components from the main pipeline
 from inference import CONFIG, process_id, load_yolo_model
 
@@ -463,6 +464,56 @@ def is_aadhaar_card(image, image_path=None, cache=None, threshold=0.7):
         cache["misc"][cache_key] = False
     return False
 
+def search_identifier_in_text(text, doc_type):
+    """
+    Searches for a valid document identifier pattern in the raw OCR text.
+    Acts as a secure check when YOLO detection fails to locate the bounding box.
+    """
+    if not text:
+        return False
+    text = text.upper()
+    
+    if doc_type == "Aadhaar":
+        # Match standard 12-digit number (with optional spaces/hyphens) or masked version
+        patterns = [
+            r'\b\d{4}\s*\d{4}\s*\d{4}\b',
+            r'\b[X\*]{4}\s*[X\*]{4}\s*\d{4}\b',
+            r'\b\d{12}\b'
+        ]
+        return any(re.search(pat, text) for pat in patterns)
+        
+    elif doc_type == "Pan_Card":
+        # Match 5 letters + 4 digits + 1 letter
+        pattern = r'\b[A-Z]{5}\d{4}[A-Z]\b'
+        return bool(re.search(pattern, text))
+        
+    elif doc_type == "Driving_License":
+        # Match standard DL: e.g. DL14 20110012345, DL-1420110012345, JH09 20210020533, RJ14C20220018637
+        patterns = [
+            r'[A-Z]{2}\d{2}[A-Z]?\s*\d{4}\s*\d{7}',
+            r'[A-Z]{2}-\d{2}-\d{11}',
+            r'[A-Z]{2}\d{13}'
+        ]
+        return any(re.search(pat, text) for pat in patterns)
+        
+    elif doc_type == "Voter_Id":
+        # Match EPIC format: 3 letters + 7 digits, or slash-separated state formats e.g. DL/01/001/012345
+        patterns = [
+            r'\b[A-Z]{3}\d{7}\b',
+            r'[A-Z]{2,3}/\d+(?:/\d+)+'
+        ]
+        return any(re.search(pat, text) for pat in patterns)
+        
+    elif doc_type == "Passport":
+        # Match 1 letter + 7 digits, or MRZ lines
+        patterns = [
+            r'\b[A-Z]\d{7}\b',
+            r'P<[A-Z]{3}[A-Z_]+<<'
+        ]
+        return any(re.search(pat, text) for pat in patterns)
+        
+    return False
+
 def verify_identifier_presence(image, doc_type, image_path=None, cache=None):
     """
     Verifies that the unique ID number field is present and contains readable text.
@@ -544,6 +595,48 @@ def verify_identifier_presence(image, doc_type, image_path=None, cache=None):
                             if cache is not None:
                                 cache["misc"][cache_key] = True
                             return True
+        # Fallback: If YOLO model fails to detect the identifier box, check the full image OCR text for expected patterns.
+        # This handles layout variations across different states.
+        logger.info(f"YOLO detection did not find confident identifier class for {doc_type}. Running full-image OCR search fallback...")
+        
+        # Fetch full image OCR results (check cache first)
+        ocr_res = None
+        if cache is not None and (image_path if image_path else id(image), "full_ocr") in cache["misc"]:
+            ocr_res = cache["misc"][(image_path if image_path else id(image), "full_ocr")]
+            
+        if ocr_res is None:
+            # Downscale image to max width 320 for sub-100ms OCR execution
+            h, w = image.shape[:2]
+            w_target = 320
+            if w > w_target:
+                scale = w_target / w
+                img_resized = cv2.resize(image, (w_target, int(h * scale)))
+            else:
+                img_resized = image
+            padded = cv2.copyMakeBorder(img_resized, 15, 15, 15, 15, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+            from inference import OCR
+            ocr_res = OCR.ocr(padded)
+            if cache is not None:
+                cache["misc"][(image_path if image_path else id(image), "full_ocr")] = ocr_res
+                
+        text_list = []
+        if ocr_res:
+            for item in ocr_res:
+                if isinstance(item, dict):
+                    text_list.extend(item.get("rec_texts", []))
+                elif isinstance(item, list):
+                    for word in item:
+                        if isinstance(word, list) and len(word) >= 2:
+                            text_list.append(word[1][0])
+                            
+        full_text = " ".join(text_list)
+        
+        if search_identifier_in_text(full_text, doc_type):
+            logger.info(f"Verified identifier presence for {doc_type} via full-image OCR search fallback. Text: '{full_text}'")
+            if cache is not None:
+                cache["misc"][cache_key] = True
+            return True
+            
     except Exception as e:
         logger.error(f"Error verifying identifier presence: {e}")
         
