@@ -1045,7 +1045,59 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             
         # Classify the ID type
         results = classifier(image, device=DEVICE)
-        if not results or results[0].probs is None:
+        
+        raw_class = None
+        confidence = 0.0
+        if results and results[0].probs is not None:
+            raw_class = results[0].names[results[0].probs.top1]
+            confidence = results[0].probs.top1conf.item()
+            
+        logger.info(f"Initial classification for {image_path} (0 deg): '{raw_class}' with confidence {confidence:.2f}")
+        
+        # Automatic rotation detection and correction
+        if confidence < confidence_threshold:
+            logger.info(f"Confidence {confidence:.2f} is below threshold {confidence_threshold}. Running rotation correction check...")
+            rotations = [
+                (cv2.ROTATE_90_CLOCKWISE, 90),
+                (cv2.ROTATE_180, 180),
+                (cv2.ROTATE_90_COUNTERCLOCKWISE, 270)
+            ]
+            best_rotation = None
+            best_raw_class = raw_class
+            best_confidence = confidence
+            best_results = results
+            
+            for rot_flag, angle in rotations:
+                rotated_img = cv2.rotate(image, rot_flag)
+                rot_results = classifier(rotated_img, device=DEVICE)
+                if rot_results and rot_results[0].probs is not None:
+                    rot_class = rot_results[0].names[rot_results[0].probs.top1]
+                    rot_conf = rot_results[0].probs.top1conf.item()
+                    logger.info(f"Rotation check ({angle} deg): '{rot_class}' with confidence {rot_conf:.2f}")
+                    if rot_conf > best_confidence:
+                        best_confidence = rot_conf
+                        best_raw_class = rot_class
+                        best_rotation = rot_flag
+                        best_results = rot_results
+            
+            if best_rotation is not None and best_confidence >= confidence_threshold:
+                logger.info(f"Correcting image rotation. Best orientation found at rotation flag {best_rotation} with confidence {best_confidence:.2f}")
+                image = cv2.rotate(image, best_rotation)
+                raw_class = best_raw_class
+                confidence = best_confidence
+                results = best_results
+                if cache is not None:
+                    cache["images"][image_path] = image
+                    # Clear geometry-dependent cache keys
+                    for k in [(image_path, "Driving_License"), (image_path, "Aadhaar"), (image_path, "Pan_Card"), (image_path, "Voter_Id"), (image_path, "Passport")]:
+                        if k in cache["detections"]:
+                            del cache["detections"][k]
+                    if (image_path, "full_ocr") in cache["misc"]:
+                        del cache["misc"][(image_path, "full_ocr")]
+                    if (image_path, "dl_side") in cache["misc"]:
+                        del cache["misc"][(image_path, "dl_side")]
+                        
+        if not raw_class:
             return {
                 "is_valid": False,
                 "status": "unable_to_verify",
@@ -1054,11 +1106,6 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
                 "confidence": 0.0,
                 "message": "Classification model returned no prediction results."
             }
-            
-        raw_class = results[0].names[results[0].probs.top1]
-        confidence = results[0].probs.top1conf.item()
-        
-        logger.info(f"Classified {image_path} as '{raw_class}' with confidence {confidence:.2f}")
     except Exception as e:
         return {
             "is_valid": False,
