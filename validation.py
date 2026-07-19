@@ -1043,6 +1043,45 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
                 "message": f"Failed to load image: {image_path}"
             }
             
+        # Automatic rotation detection and correction (Layer 1: Tesseract OSD)
+        corrected_rotation = None
+        try:
+            import pytesseract
+            import shutil
+            
+            tesseract_cmd = shutil.which("tesseract")
+            if not tesseract_cmd:
+                if os.path.exists("/opt/homebrew/bin/tesseract"):
+                    tesseract_cmd = "/opt/homebrew/bin/tesseract"
+                elif os.path.exists("/usr/local/bin/tesseract"):
+                    tesseract_cmd = "/usr/local/bin/tesseract"
+                    
+            if tesseract_cmd:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+                osd = pytesseract.image_to_osd(image)
+                rotate_angle = 0
+                for line in osd.split("\n"):
+                    if "Rotate:" in line:
+                        rotate_angle = int(line.split(":")[1].strip())
+                        break
+                        
+                if rotate_angle in [90, 180, 270]:
+                    logger.info(f"Tesseract OSD detected document rotation. Need to rotate by {rotate_angle} degrees clockwise to align upright.")
+                    if rotate_angle == 90:
+                        corrected_rotation = cv2.ROTATE_90_CLOCKWISE
+                    elif rotate_angle == 180:
+                        corrected_rotation = cv2.ROTATE_180
+                    elif rotate_angle == 270:
+                        corrected_rotation = cv2.ROTATE_90_COUNTERCLOCKWISE
+        except Exception as e:
+            logger.info(f"Tesseract OSD orientation detection check skipped/failed: {e}")
+            
+        if corrected_rotation is not None:
+            logger.info(f"Rotating image to upright orientation using OSD result (flag {corrected_rotation})")
+            image = cv2.rotate(image, corrected_rotation)
+            if cache is not None:
+                cache["images"][image_path] = image
+            
         # Classify the ID type
         results = classifier(image, device=DEVICE)
         
