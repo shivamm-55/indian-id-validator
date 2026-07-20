@@ -1190,6 +1190,46 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
     detected_type, detected_side = mapping[raw_class]
     norm_expected_type = normalize_document_type(expected_type)
     
+    # Automatic rotation detection and correction (Layer 3: YOLO layout confirmation)
+    # If the classifier confidently detected a document type, double-check its layout orientation.
+    # Note: Passports don't have separate front/back YOLO layout models (we use Passport model for both).
+    # If confirm_document_type fails in current orientation, check other rotations.
+    is_upright = confirm_document_type(image, detected_type, threshold=0.4, image_path=image_path, cache=cache)
+    if not is_upright:
+        logger.info(f"YOLO layout confirmation failed for {detected_type} in current orientation on {image_path}. Running rotation check...")
+        rotations = [
+            (cv2.ROTATE_90_CLOCKWISE, 90),
+            (cv2.ROTATE_180, 180),
+            (cv2.ROTATE_90_COUNTERCLOCKWISE, 270)
+        ]
+        for rot_flag, angle in rotations:
+            rotated_img = cv2.rotate(image, rot_flag)
+            # Clear cache entries temporarily for this specific check to avoid returning 0-deg cached predictions
+            if cache is not None:
+                key_det = (image_path, detected_type)
+                if key_det in cache["detections"]:
+                    del cache["detections"][key_det]
+                confirm_key = (image_path, f"confirm_{detected_type}")
+                if confirm_key in cache["misc"]:
+                    del cache["misc"][confirm_key]
+                    
+            if confirm_document_type(rotated_img, detected_type, threshold=0.4, image_path=image_path, cache=cache):
+                logger.info(f"Correcting image rotation based on YOLO layout confirmation. Best orientation found at {angle} degrees clockwise.")
+                image = rotated_img
+                if cache is not None:
+                    cache["images"][image_path] = image
+                    # Clear all other geometry-dependent cache keys
+                    for k in list(cache["detections"].keys()):
+                        if k[0] == image_path:
+                            del cache["detections"][k]
+                    for k in list(cache["misc"].keys()):
+                        if k[0] == image_path:
+                            del cache["misc"][k]
+                    for k in list(cache["ocr_crops"].keys()):
+                        if k[0] == image_path:
+                            del cache["ocr_crops"][k]
+                break
+    
     # 1. First, check if it is actually an Aadhaar card (since classifier is prone to false positives on vertical Aadhaar)
     is_aadhaar = False
     # Only run is_aadhaar check if detected type is Aadhaar, Voter_Id, or classification confidence is low
@@ -1265,20 +1305,73 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
             if detected_type == "Voter_Id" and side_to_check is None:
                 side_to_check = determine_voter_id_side(image_path, cache=cache)
                 
-            requires_id = True
+            req_id_mismatch = True
             if detected_type in ["Driving_License", "Voter_Id", "Aadhaar"] and side_to_check == "back":
-                requires_id = False
+                req_id_mismatch = False
                 
-            if requires_id:
-                if not verify_identifier_presence(image, detected_type, image_path=image_path, cache=cache):
-                    logger.info(f"Mismatched detected type '{detected_type}' failed unique identifier check. Reclassifying as None to prevent false positive mismatch reports.")
-                    detected_type = None
-                    detected_side = None
+            mismatch_verified = False
+            # Check initial orientation
+            if req_id_mismatch:
+                if verify_identifier_presence(image, detected_type, image_path=image_path, cache=cache):
+                    mismatch_verified = True
             else:
-                if not confirm_document_type(image, detected_type, threshold=0.5, image_path=image_path, cache=cache):
-                    logger.info(f"Mismatched detected type '{detected_type}' back side failed structural confirmation. Reclassifying as None to prevent false positive mismatch reports.")
-                    detected_type = None
-                    detected_side = None
+                if confirm_document_type(image, detected_type, threshold=0.5, image_path=image_path, cache=cache):
+                    mismatch_verified = True
+                    
+            if not mismatch_verified:
+                logger.info(f"Mismatched detected type verification failed in current orientation on {image_path}. Running rotation fallback check...")
+                rotations = [
+                    (cv2.ROTATE_90_CLOCKWISE, 90),
+                    (cv2.ROTATE_180, 180),
+                    (cv2.ROTATE_90_COUNTERCLOCKWISE, 270)
+                ]
+                for rot_flag, angle in rotations:
+                    rotated_img = cv2.rotate(image, rot_flag)
+                    # Update cache temporarily
+                    if cache is not None:
+                        cache["images"][image_path] = rotated_img
+                        for k in list(cache["detections"].keys()):
+                            if k[0] == image_path:
+                                del cache["detections"][k]
+                        for k in list(cache["misc"].keys()):
+                            if k[0] == image_path:
+                                del cache["misc"][k]
+                        for k in list(cache["ocr_crops"].keys()):
+                            if k[0] == image_path:
+                                del cache["ocr_crops"][k]
+                                
+                    if req_id_mismatch:
+                        if verify_identifier_presence(rotated_img, detected_type, image_path=image_path, cache=cache):
+                            logger.info(f"Correcting image rotation based on mismatched ID verification. Best orientation found at {angle} degrees clockwise.")
+                            image = rotated_img
+                            mismatch_verified = True
+                            break
+                    else:
+                        if confirm_document_type(rotated_img, detected_type, threshold=0.5, image_path=image_path, cache=cache):
+                            logger.info(f"Correcting image rotation based on mismatched back confirmation. Best orientation found at {angle} degrees clockwise.")
+                            image = rotated_img
+                            mismatch_verified = True
+                            break
+                            
+            if not mismatch_verified:
+                # Restore original image
+                if cache is not None:
+                    original_img = cv2.imread(image_path)
+                    if original_img is not None:
+                        cache["images"][image_path] = original_img
+                    for k in list(cache["detections"].keys()):
+                        if k[0] == image_path:
+                            del cache["detections"][k]
+                    for k in list(cache["misc"].keys()):
+                        if k[0] == image_path:
+                            del cache["misc"][k]
+                    for k in list(cache["ocr_crops"].keys()):
+                        if k[0] == image_path:
+                            del cache["ocr_crops"][k]
+                            
+                logger.info(f"Mismatched detected type '{detected_type}' failed unique identifier check/back side confirmation under all rotations. Reclassifying as None to prevent false positive mismatch reports.")
+                detected_type = None
+                detected_side = None
 
         if detected_type is None:
             return {
@@ -1305,8 +1398,89 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
     if detected_type in ["Driving_License", "Voter_Id", "Aadhaar"] and detected_side == "back":
         requires_id = False
         
+    verification_success = False
     if requires_id:
-        if not verify_identifier_presence(image, detected_type, image_path=image_path, cache=cache):
+        if verify_identifier_presence(image, detected_type, image_path=image_path, cache=cache):
+            verification_success = True
+        else:
+            logger.info(f"Unique ID presence verification failed in current orientation on {image_path}. Running rotation fallback check...")
+            rotations = [
+                (cv2.ROTATE_90_CLOCKWISE, 90),
+                (cv2.ROTATE_180, 180),
+                (cv2.ROTATE_90_COUNTERCLOCKWISE, 270)
+            ]
+            for rot_flag, angle in rotations:
+                rotated_img = cv2.rotate(image, rot_flag)
+                
+                # Update cache temporarily for this rotation
+                if cache is not None:
+                    cache["images"][image_path] = rotated_img
+                    # Clear geometry-dependent cache keys
+                    for k in list(cache["detections"].keys()):
+                        if k[0] == image_path:
+                            del cache["detections"][k]
+                    for k in list(cache["misc"].keys()):
+                        if k[0] == image_path:
+                            del cache["misc"][k]
+                    for k in list(cache["ocr_crops"].keys()):
+                        if k[0] == image_path:
+                            del cache["ocr_crops"][k]
+                            
+                if verify_identifier_presence(rotated_img, detected_type, image_path=image_path, cache=cache):
+                    logger.info(f"Correcting image rotation based on unique ID presence verification. Best orientation found at {angle} degrees clockwise.")
+                    image = rotated_img
+                    verification_success = True
+                    break
+    else:
+        if confirm_document_type(image, detected_type, threshold=0.5, image_path=image_path, cache=cache):
+            verification_success = True
+        else:
+            logger.info(f"Back side structural confirmation failed in current orientation on {image_path}. Running rotation fallback check...")
+            rotations = [
+                (cv2.ROTATE_90_CLOCKWISE, 90),
+                (cv2.ROTATE_180, 180),
+                (cv2.ROTATE_90_COUNTERCLOCKWISE, 270)
+            ]
+            for rot_flag, angle in rotations:
+                rotated_img = cv2.rotate(image, rot_flag)
+                
+                # Update cache temporarily for this rotation
+                if cache is not None:
+                    cache["images"][image_path] = rotated_img
+                    # Clear geometry-dependent cache keys
+                    for k in list(cache["detections"].keys()):
+                        if k[0] == image_path:
+                            del cache["detections"][k]
+                    for k in list(cache["misc"].keys()):
+                        if k[0] == image_path:
+                            del cache["misc"][k]
+                    for k in list(cache["ocr_crops"].keys()):
+                        if k[0] == image_path:
+                            del cache["ocr_crops"][k]
+                            
+                if confirm_document_type(rotated_img, detected_type, threshold=0.5, image_path=image_path, cache=cache):
+                    logger.info(f"Correcting image rotation based on back side structural confirmation. Best orientation found at {angle} degrees clockwise.")
+                    image = rotated_img
+                    verification_success = True
+                    break
+                    
+    # If all rotations failed, restore original image in cache and return unable_to_verify
+    if not verification_success:
+        if cache is not None:
+            original_img = cv2.imread(image_path)
+            if original_img is not None:
+                cache["images"][image_path] = original_img
+            for k in list(cache["detections"].keys()):
+                if k[0] == image_path:
+                    del cache["detections"][k]
+            for k in list(cache["misc"].keys()):
+                if k[0] == image_path:
+                    del cache["misc"][k]
+            for k in list(cache["ocr_crops"].keys()):
+                if k[0] == image_path:
+                    del cache["ocr_crops"][k]
+                    
+        if requires_id:
             logger.warning(f"Could not detect or read unique ID number on {image_path} for type {detected_type}.")
             return {
                 "is_valid": False,
@@ -1316,9 +1490,7 @@ def validate_single_image(image_path, expected_type=None, expected_side=None, co
                 "confidence": confidence,
                 "message": f"Verification failed: Unable to detect or read the unique ID identifier (e.g. Aadhaar No, Voter EPIC, PAN, DL No) on the document."
             }
-    else:
-        # For back sides, verify structural confirmation of the document type to filter out random/out-of-domain images
-        if not confirm_document_type(image, detected_type, threshold=0.5, image_path=image_path, cache=cache):
+        else:
             logger.warning(f"Back side structural confirmation failed on {image_path} for type {detected_type}.")
             return {
                 "is_valid": False,
